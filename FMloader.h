@@ -48,7 +48,7 @@
 #define silent false
 
 // which params do we care about loading
-#define interesting_params std::vector<std::string>({"CDi","CDo","CDtot","CDtrefftz","CFx","CFy","CFz","CL","CMx","CMy","CMz","Cmx","Cmy","Cmz","CS","Cms", "E","FC_AoA_","FC_Beta_","FC_Bref_","FC_Cref_","FC_Mach_","FC_Pitch_Rate","FC_ReCref_","FC_Rho_","FC_Roll__Rate","FC_Sref_","FC_Vinf_","FC_Xcg_","FC_Yaw___Rate","FC_Ycg_","FC_Zcg_","L / D"})
+#define interesting_params {"CDi","CDo","CDtot","CDtrefftz","CFx","CFy","CFz","CL","CMx","CMy","CMz","Cmx","Cmy","Cmz","CS","Cms", "E","FC_AoA_","FC_Beta_","FC_Bref_","FC_Cref_","FC_Mach_","FC_Pitch_Rate","FC_ReCref_","FC_Rho_","FC_Roll__Rate","FC_Sref_","FC_Vinf_","FC_Xcg_","FC_Yaw___Rate","FC_Ycg_","FC_Zcg_","L / D"}
 
 
 

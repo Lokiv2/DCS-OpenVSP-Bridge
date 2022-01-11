@@ -7,6 +7,7 @@
 //#include <utility> 
 //#include <algorithm>
 
+std::vector<std::string> paramlist interesting_params;
 
     // basic constructor for a single element
     FMDataLoader::FMElementData::FMElementData(std::string n) {
@@ -326,8 +327,8 @@
                                     machs.push_back(stod(x));
                                 }
                             }
-                            else if (t.compare("CDi") == 0 || t.compare("CDo") == 0 || t.compare("CDtot") == 0 || t.compare("CFx") == 0 || t.compare("CFy") == 0 || t.compare("CFz") == 0 || t.compare("CL") == 0 || t.compare("Cmx") == 0 || t.compare("Cmy") == 0 || t.compare("Cmz") == 0 || t.compare("Cms") == 0 || t.compare("CS"))
-                          //  else if (std::find(interesting_params.begin(), interesting_params.end(), t) != interesting_params.end())
+                           // else if (t.compare("CDi") == 0 || t.compare("CDo") == 0 || t.compare("CDtot") == 0 || t.compare("CFx") == 0 || t.compare("CFy") == 0 || t.compare("CFz") == 0 || t.compare("CL") == 0 || t.compare("Cmx") == 0 || t.compare("Cmy") == 0 || t.compare("Cmz") == 0 || t.compare("Cms") == 0 || t.compare("CS"))
+                            else if (std::find(paramlist.begin(), paramlist.end(), t) != paramlist.end())
                             {
                                 std::string x;
                                 std::vector<double> v;
@@ -402,8 +403,8 @@
                                     }
                                 }
                             }
-                            //else if (std::find(interesting_params.begin(), interesting_params.end(), t) != interesting_params.end())
-                            else if (t.compare("CDi") == 0 || t.compare("CFx") == 0 || t.compare("CFy") == 0 || t.compare("CFz") == 0 || t.compare("CL") == 0 || t.compare("Cmx") == 0 || t.compare("Cmy") == 0 || t.compare("Cmz") == 0 || t.compare("Cms") == 0)
+                            else if (std::find(paramlist.begin(), paramlist.end(), t) != paramlist.end())
+                            //else if (t.compare("CDi") == 0 || t.compare("CFx") == 0 || t.compare("CFy") == 0 || t.compare("CFz") == 0 || t.compare("CL") == 0 || t.compare("Cmx") == 0 || t.compare("Cmy") == 0 || t.compare("Cmz") == 0 || t.compare("Cms") == 0)
                             {
                                 std::string x;
                                 int elem_iter = 0;
