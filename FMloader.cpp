@@ -24,24 +24,24 @@ std::vector<std::string> paramlist interesting_params;
     void FMDataLoader::FMElementData::insert(std::string param, double deflect, double mach, double alpha, double beta, double value) {
 
  
-        if (find(deflects.begin(), deflects.end(), deflect) == deflects.end())  // if new element, add it to the unique list of elements
+        if (find(ELdeflects.begin(), ELdeflects.end(), deflect) == ELdeflects.end())  // if new element, add it to the unique list of elements
         {
-            deflects.push_back(deflect);
+            ELdeflects.push_back(deflect);
         }
 
-        if (find(machs.begin(), machs.end(), mach) == machs.end())  // if new mach, add it to the unique list of machs
+        if (find(ELmachs.begin(), ELmachs.end(), mach) == ELmachs.end())  // if new mach, add it to the unique list of machs
         {
-            machs.push_back(mach);
+            ELmachs.push_back(mach);
         }
 
-        if (find(alphas.begin(), alphas.end(), alpha) == alphas.end())  // if new alpha, add it to the unique list of alphas
+        if (find(ELalphas.begin(), ELalphas.end(), alpha) == ELalphas.end())  // if new alpha, add it to the unique list of alphas
         {
-            alphas.push_back(alpha);
+            ELalphas.push_back(alpha);
         }
 
-        if (find(betas.begin(), betas.end(), beta) == betas.end())  // if new beta, add it to the unique list of betas
+        if (find(ELbetas.begin(), ELbetas.end(), beta) == ELbetas.end())  // if new beta, add it to the unique list of betas
         {
-            betas.push_back(beta);
+            ELbetas.push_back(beta);
         }
 
         data_frame.insert({ make_tuple(param, deflect, mach, alpha, beta), value });
@@ -56,11 +56,21 @@ std::vector<std::string> paramlist interesting_params;
         // par names are same as OpenVSP nomenclature (CL, Cmx, CDi, etc)
 
         double result = 0.0;
+        std::vector<double> x1;
+
+        std::vector<double> def_proxy = getNearest(ELdeflects, alpha);
+        std::vector<double> mach_proxy = getNearest(ELmachs, alpha);
+        std::vector<double> alph_proxy = getNearest(ELalphas, alpha);
+        std::vector<double> beta_proxy = getNearest(ELbetas, alpha);
+        double a, b;
+
         try {
-            result = data_frame.at(make_tuple(param, deflect, mach, alpha, beta));
+            a = data_frame.at(make_tuple(param, def_proxy[0], mach_proxy[0], alph_proxy[0], beta_proxy[0]));
+            b = data_frame.at(make_tuple(param, def_proxy[1], mach_proxy[1], alph_proxy[1], beta_proxy[1]));
+            result = (a + b) / 2.0;
         }
         catch (const std::out_of_range& oor) {
-            if (!silent) std::cout << "FM param not found for : " << name << ", " << param << ", " << deflect << ", " << mach << ", " << alpha << ", " << beta << std::endl;
+            if (!silent) printf("FM param not found for %s %s %f %f %f %f \n", name.c_str(), param.c_str(), deflect, mach, alpha, beta);
         }
         return result;
 
@@ -76,13 +86,13 @@ std::vector<std::string> paramlist interesting_params;
         std::vector<double> result;
         std::tuple<std::string, double, double, double, double> key;
 
-        for (auto& d : deflects)
+        for (auto& d : ELdeflects)
         {
-            for (auto& m : machs)
+            for (auto& m : ELmachs)
             {
-                for (auto& a : alphas)
+                for (auto& a : ELalphas)
                 {
-                    for (auto& b : betas)
+                    for (auto& b : ELbetas)
                     {
                         key = make_tuple(param, d, m, a, b);
                         try {
@@ -208,6 +218,13 @@ std::vector<std::string> paramlist interesting_params;
     {
         if(!silent) printf("Processing %s\n", filename.string().c_str());
 
+        AFdeflects.push_back(0.0); // temp until we have a way to get this from data
+        std::vector<std::string> elem;      // remember the elements we've found in the results, this should be stable for any single VSP history file.
+        std::vector<double> deflects = { 0.0 };
+        std::vector<double> alphas;
+        std::vector<double> betas;
+        std::vector<double> machs;
+
         std::map<std::tuple< std::string, std::string, double, double, double, double>, double> result;
         // <parameter, map<key=<deflection, mach, alpha, beta>, value=parameter value>>>
 
@@ -226,7 +243,7 @@ std::vector<std::string> paramlist interesting_params;
             int linecount = 0;
 
             std::string p = "";      // we'll store each page here temporarily
-            std::string cur_page_name = "start of file";  // what type of VSP output is this page (elements? totals? other?)
+            std::string cur_page_name = "VSPAERO_History";  // what type of VSP output is this page (elements? totals? other?)
 
             while (getline(myFile, line))       // first we'll break the text file into consumable Pages delimited by the VSP "Results_Name" line.
             {
@@ -236,7 +253,7 @@ std::vector<std::string> paramlist interesting_params;
                 std::stringstream ss(line); 
                 std::getline(ss, r, ',');       // get first comma-separate token in line
               
-                if (!r.compare("Results_Name")) // store the page start and corresponding VSP page name (e.g. VSPAERO_Comp_Load)
+                if (r.compare("Results_Name") == 0) // store the page start and corresponding VSP page name (e.g. VSPAERO_Comp_Load)
                 {
                     if (p.length() > 0) pages.push_back(make_pair(p, cur_page_name));   // since we're now starting a new page, let's save the previous page to the vector of pages.  Note cur_page_name is still storing the previous pages name.
                     p = "";                                         // reset the temp page accumulator
@@ -273,7 +290,7 @@ std::vector<std::string> paramlist interesting_params;
                 Mach
              */
 
-            std::vector<std::string> elem;      // remember the elements we've found in the results, this should be stable for any single VSP history file.
+
 
             for (const auto& page : pages)      // step through our std::vector of pages and process them into data
             {
@@ -281,86 +298,105 @@ std::vector<std::string> paramlist interesting_params;
                 double alpha;
                 double beta;
                 double mach;
-                std::vector<double> deflects = { 0.0 };
-                std::vector<double> alphas;
-                std::vector<double> betas;
-                std::vector<double> machs;
-                std::string l,t;
 
-
-                if (verbose) printf("Processing... %s\n", std::get<1>(page).c_str());
+                if (verbose) printf("Processing... \n%s\n", std::get<1>(page).c_str());
 
                 // airframe-total parameter loading
-                if (!std::get<1>(page).compare("VSPAERO_Polar")) {
-
-                    if (verbose) printf("Found a useful page of polars %s \n", std::get<0>(page).c_str());
-                    
+                if (std::get<1>(page).compare("VSPAERO_Polar") == 0) 
+                {
+                    std::string l;
+                    if (verbose) printf("Found a useful page of polars \n%s \n", std::get<0>(page).c_str());
                     std::vector<std::tuple<std::string, std::vector<double>>>  param_cache;
 
                     std::stringstream pagestream(std::get<0>(page));
+                    while (getline(pagestream, l, '\n'))  // get the next line from the page
                     {
+                        std::string t;
+                        if (verbose) printf("\nline \t%s \n", l.c_str());
+
                         std::stringstream linestream(l);
-                        while (getline(linestream, t, ','))
+                        getline(linestream, t, ',');
+
+                        if (verbose) printf("Checking token \t%s", t.c_str());
+                        if (t == "Alpha")
                         {
-
-                            if (t.compare("Alpha") == 0)
+                            //   std::string x;
+                            while (getline(linestream, t, ',')) // record alphas for this page in order 
                             {
-                                std::string x;
-                                while (getline(linestream, x, ',')) // record alphas for this page in order 
+                                if (std::find(AFalphas.begin(), AFalphas.end(), stod(t)) == AFalphas.end())
                                 {
-                                    alphas.push_back(stod(x));
+                                    AFalphas.push_back(stod(t));
+                                    if (verbose)printf("adding new alphas to polars\t %f\n", stod(t));
                                 }
+                                alphas.push_back(stod(t));
                             }
-                            else if (!t.compare("Beta") == 0)
-                            {
-                                std::string x;
-                                while (getline(linestream, x, ',')) // record betas for this page in order
-                                {
-                                    betas.push_back(stod(x));
-                                }
-                            }
-                            else if (!t.compare("Mach") == 0)
-                            {
-                                std::string x;
-                                while (getline(linestream, x, ',')) // record machs list for this page in order
-                                {
-                                    machs.push_back(stod(x));
-                                }
-                            }
-                           // else if (t.compare("CDi") == 0 || t.compare("CDo") == 0 || t.compare("CDtot") == 0 || t.compare("CFx") == 0 || t.compare("CFy") == 0 || t.compare("CFz") == 0 || t.compare("CL") == 0 || t.compare("Cmx") == 0 || t.compare("Cmy") == 0 || t.compare("Cmz") == 0 || t.compare("Cms") == 0 || t.compare("CS"))
-                            else if (std::find(paramlist.begin(), paramlist.end(), t) != paramlist.end())
-                            {
-                                std::string x;
-                                std::vector<double> v;
-
-                                while (getline(linestream, x, ','))
-                                {
-                                    param_cache.push_back(make_tuple((t), v));
-                                }
-                            }
-
                         }
-                        // all lines vectorized, lets push them into final data frame
-                        for (auto& param : param_cache)
+                        else if (t == "Beta")
                         {
-                            int col_indx = 0;
-                            for (auto& val : std::get<1>(param))
+                            //    std::string x;
+                            while (getline(linestream, t, ',')) // record betas for this page in order
                             {
-                                insertPolar(std::get<0>(param), deflection, machs.at(col_indx), alphas.at(col_indx), betas.at(col_indx), val);
-                                col_indx++;
+                                if (std::find(AFbetas.begin(), AFbetas.end(), stod(t)) == AFbetas.end())
+                                {
+                                    AFbetas.push_back(stod(t));
+                                    if (verbose)printf("adding new beta to polars\t %f\n", stod(t));
+
+                                }
+                                betas.push_back(stod(t));
                             }
+                        }
+                        else if (t == "Mach")
+                        {
+                            // std::string x;
+                            while (getline(linestream, t, ',')) // record machs list for this page in order
+                            {
+                                if (std::find(AFmachs.begin(), AFmachs.end(), stod(t)) == AFmachs.end())
+                                {
+                                    AFmachs.push_back(stod(t));
+                                    if(verbose) printf("adding new mach to polars\t %f\n", stod(t));
+
+                                }
+                                machs.push_back(stod(t));
+                            }
+                        }
+                        // else if (t.compare("CDi") == 0 || t.compare("CDo") == 0 || t.compare("CDtot") == 0 || t.compare("CFx") == 0 || t.compare("CFy") == 0 || t.compare("CFz") == 0 || t.compare("CL") == 0 || t.compare("Cmx") == 0 || t.compare("Cmy") == 0 || t.compare("Cmz") == 0 || t.compare("Cms") == 0 || t.compare("CS"))
+                        else if (std::find(paramlist.begin(), paramlist.end(), t) != paramlist.end())
+                        {
+                            std::string x;
+                            std::vector<double> v;
+
+                            while (getline(linestream, x, ','))
+                            {
+                                v.push_back(stod(x));
+                            }
+                            param_cache.push_back(make_tuple(t, v));
+                        }
+                    }
+
+                    
+                    // all lines vectorized, lets push them into final data frame
+                    for (auto& param : param_cache)
+                    {
+                        int col_indx = 0;
+                        for (auto& val : std::get<1>(param))
+                        {
+                        //    printf("trying to insert new polar %s %f", std::get<0>(param).c_str(), val);
+                            insertPolar(std::get<0>(param), deflection, machs[col_indx], alphas[col_indx], betas[col_indx], val);
+                            col_indx++;
                         }
                     }
                 }
 
                 // element-wise parameter loading..
-                if (!std::get<1>(page).compare("VSPAERO_Comp_Load"))
+                if (std::get<1>(page).compare("VSPAERO_Comp_Load")==0)
                 {
+                    std::string l;
                     if (verbose) printf("Found a useful result page %s \n", std::get<0>(page).c_str());
 
                     std::stringstream pagestream(std::get<0>(page));
                     while (getline(pagestream, l,'\n'))  // get the next line from the page
                     {
+                        std::string t;
                         std::stringstream linestream(l);
                         while (getline(linestream, t, ','))
                         {
@@ -369,18 +405,30 @@ std::vector<std::string> paramlist interesting_params;
                                 std::string x;
                                 getline(linestream, x, ','); // record alpha for this page (its the same for all columns in page)
                                 alpha = stod(x);
+                                if (std::find(alphas.begin(), alphas.end(), alpha) != alphas.end())
+                                {
+                                    alphas.push_back(alpha);
+                                }
                             }
                             else if (t.compare("Beta") == 0)
                             {
                                 std::string x;
                                 getline(linestream, x, ','); // record beta for this page (its the same for all columns in page)
                                 beta = stod(x);
+                                if (std::find(betas.begin(), betas.end(), beta) != betas.end())
+                                {
+                                    betas.push_back(beta);
+                                }
                             }
                             else if (t.compare("Mach") == 0)
                             {
                                 std::string x;
                                 getline(linestream, x, ','); // record mach for this page (its the same for all columns in page)
                                 mach = stod(x);
+                                if (std::find(machs.begin(), machs.end(), mach) != machs.end())
+                                {
+                                     machs.push_back(mach);
+                                }
                             }
                             else if (t.compare("Comp_Name") == 0)
                             {
@@ -428,8 +476,29 @@ std::vector<std::string> paramlist interesting_params;
         }
 
         myFile.close();
-        if (!silent) std::cout << "FM Loading Complete!";
+        std::sort(AFdeflects.begin(), AFdeflects.end());
+        std::sort(AFmachs.begin(), AFmachs.end());
+        std::sort(AFalphas.begin(), AFalphas.end());
+        std::sort(AFbetas.begin(), AFbetas.end());
 
+        if (!silent) 
+        {
+            if (!silent) printf("FM Loading Complete!\n");
+            if (!silent) printf("\nDeflections: \n");
+            for (auto& x : AFdeflects) { printf("%f\t", x); }
+            if (!silent) printf("\nMachs: \n");
+            for (auto& x : AFmachs) { printf("%f\t", x); }
+            if (!silent) printf("\nAlphas: \n");
+            for (auto& x : AFalphas) { printf("%f\t", x); }
+            if (!silent) printf("\nBetas: \n");
+            for (auto& x : AFbetas) { printf("%f\t", x); }
+            if (!silent) printf("\n");
+        }
+
+        for (auto& x : airframe_polars)
+        {
+            if (!silent) printf("%s, %f, %f, %f, %f = \t%f\n", std::get<0>(std::get<0>(x)), std::get<1>(std::get<0>(x)), std::get<2>(std::get<0>(x)), std::get<3>(std::get<0>(x)), std::get<4>(std::get<0>(x)), std::get<1>(x));
+        }
     }
 
     FMDataLoader::FMElementData& FMDataLoader::getCompleteElement(std::string element)
@@ -446,7 +515,7 @@ std::vector<std::string> paramlist interesting_params;
             l++;
         }
 
-        if (found_index < 0) { std::cout << element << " not found in data! Be sure to use same element names as the OpenVSP output"; }
+        if (found_index < 0) { printf("\n not found in data! Be sure to use same element names as the OpenVSP output\n"); }
         return elements.at(found_index);
     }
 
@@ -483,9 +552,11 @@ std::vector<std::string> paramlist interesting_params;
         double result = 0.0;
         std::tuple<std::string, double, double, double, double> key = make_tuple(param, deflect, mach, alpha, beta);
 
+
+
         for (auto& m : elements)
         {
-            if (!m.name.compare(element))
+            if (m.name.compare(element)==0)
             {
                 result = m.lookup(param, deflect, mach, alpha, beta);
             }
@@ -496,23 +567,98 @@ std::vector<std::string> paramlist interesting_params;
 
     void FMDataLoader::insertPolar(std::string param, double deflect, double mach, double alpha, double beta, double value) 
     {
+  //      printf("\nTrying to insert %s, %f, %f, %f, %f, %f\n", param, deflect, mach, alpha, beta, value);
+
         try
         {
-            airframe_polars.insert({ make_tuple(param, deflect, mach, alpha, beta), value });
-            if (verbose) printf("Inserted value %f for param %s in airframe polars\n", value, param.c_str());
+            if (!std::get<1>(airframe_polars.insert({ make_tuple(param, deflect, mach, alpha, beta), value })))
+            {
+                airframe_polars[make_tuple(param, deflect, mach, alpha, beta)] = value;
+                if (verbose) printf("value was already present, overwritten\n");
+            }
+            if(verbose) printf("\nInserted new value %f for param %s in airframe polars\n", value, param.c_str());
         }
-        catch (const std::out_of_range& oor) {
-            if (!silent) printf("Polar not found for %d %f\n", param, value);
+        catch (const std::exception& e) { 
+            if (!silent) printf("%s",e.what());
         }
     }
 
     double FMDataLoader::getPolar(std::string param, double deflect, double mach, double alpha, double beta)
     {
+        std::vector<double> def_proxy = getNearest(AFdeflects, deflect);
+        std::vector<double> mach_proxy = getNearest(AFmachs, mach);
+        std::vector<double> alph_proxy = getNearest(AFalphas, alpha);
+        std::vector<double> beta_proxy = getNearest(AFbetas, beta);
+
+        double a, b;
+        double result = 0.0;
+
         try {
-            return airframe_polars.at(make_tuple(param, deflect, mach, alpha, beta));
+            a = airframe_polars.at(make_tuple(param, def_proxy[0], mach_proxy[0], alph_proxy[0], beta_proxy[0]));
+            if (verbose) printf("a test %s %f %f %f %f\n", param.c_str(), def_proxy[0], mach_proxy[0], alph_proxy[0], beta_proxy[0]);
+
+            b = airframe_polars.at(make_tuple(param, def_proxy[1], mach_proxy[1], alph_proxy[1], beta_proxy[1]));
+            if (verbose) printf("b test %s %f %f %f %f\n", param.c_str(), def_proxy[1], mach_proxy[1], alph_proxy[1], beta_proxy[1]);
+
+            {
+                if (verbose) printf("\nNearest are %f %f\n", a, b);
+                result = (a + b) / 2.0;         // TODO proper interpolation
+            }
+
         }
         catch (const std::out_of_range& oor) {
             if (!silent) printf("Polar value not found! %s %f %f %f %f\n", param.c_str(), deflect, mach, alpha, beta);
         }
-        return 0.0;
+        return result;
     }
+
+
+    std::vector<double> FMDataLoader::getNearest(std::vector<double>& dim, double key)
+    {
+        std::vector<double>::iterator search_start = dim.begin();
+        std::vector<double>::iterator search_end = dim.end();
+        std::vector<double>::iterator midpoint;
+
+        if (dim.size() < 1)
+        {
+            if (verbose) printf("getNearest: input array is empty!\n");
+            return std::vector(0.0, 0.0);
+        }
+
+        if (verbose) printf("getting nearest %f in %d\n", key, dim.size() );
+
+        std::vector<double> result{ *search_start, *search_start };  // initialize the return with the case where the dim has only 1 value
+
+        // binary search through the list to find the nearest value match
+        while (std::distance(search_start, search_end) > 1)
+        {
+            double min = *std::min_element(search_start, search_end);  // get the min and max values
+            double max = *std::max_element(search_start, search_end);
+
+            // catch boundary conditions
+            if (key >= max) {
+                result = { *search_end, *search_end };  // key is beyond max range of dim
+        //        printf("off the max");
+                break;
+            }
+            else if (key <= min) {
+                result = { *search_start, *search_start }; //key is beyond min range of dim
+          //      printf("off the min");
+                break;
+            }
+
+            result =  {*search_start, *search_end};
+
+            // binary search bifurcation
+            midpoint = search_start + floor(std::distance(search_start, search_end) / 2.0);
+            if (midpoint != search_start && midpoint != search_end)
+            {
+                if (key > *midpoint) search_start = midpoint;
+                else search_end = midpoint;
+            }
+        } 
+
+        if(verbose) printf("Got nearest %f %f\n", result[0], result[1]);
+        return result;
+    }
+    

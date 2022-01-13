@@ -25,11 +25,21 @@
     - change the #def's below to match your folder and params needed
     - compile FMloaded.h and FMloader.cpp into your project
     - place 1 or more unmodified OpenVSP history.csv files (can be renamed) in /bin within your mod folder (usually alongside your EFM .dll)
-    - you can now get individual FM params by calling 
+    - In your FM code add:
 
-        double FMDataLoader::getFMParam(std::string element, std::string param, double deflect, double mach, double alpha, double beta);            // get a single parameter value for an element designated by name (as opposed to object reference)
-        double FMDataLoader::getPolar(std::string param, double deflect, double mach, double alpha, double beta);                                   // get individual airframe polar value
+    void fm_initialize()  // to initialize the data object and ingest OpenVSP files
+    {...
+        FMDataLoader FMdata = FMDataLoader(); // load and store FM data
+    ...}
 
+    void ed_fm_simulate(double dt)
+    {...
+
+    	double Cd_actual = FMdata.getPolar("CL", 0.0, mach,  alpha_DEG, beta_DEG);
+		double Cl_actual = FMdata.getPolar("CDtot", 0.0, mach, alpha_DEG, beta_DEG);
+     ...}
+
+     Enjoy your parameters!
     - if you want to be fancy you can grab the FMElementData objects and use their accessors within your aero element style code
  */
 
@@ -37,7 +47,7 @@
     MAIN TODOs:
     - find a way to include control deflection as a parameter (maybe through clever file naming?)
     - exception handling as new ways to break this are discovered
-    - evaluate performance of the access operations and see if they need to be faster
+    - maybe extend the airframe class to make the element class to make things cleaner
 */
 
 
@@ -54,15 +64,16 @@
 
     class FMDataLoader              // container of all known data
     {
+
     public:
-        class FMElementData         // container of all known data on a single element
+        class FMElementData         // container of all data on a single element
         {
         public:
             std::string name;
-            std::vector<double> deflects;
-            std::vector<double> machs;
-            std::vector<double> alphas;
-            std::vector<double> betas;
+            std::vector<double> ELdeflects;  //  list of known dimension values for the element
+            std::vector<double> ELmachs;
+            std::vector<double> ELalphas;
+            std::vector<double> ELbetas;
             
             // element constructors and setters
             FMElementData::FMElementData(std::string);                                                                       // basic constructor that just takes the element name
@@ -76,6 +87,11 @@
         private:
             std::map<std::tuple<std::string, double, double, double, double>, double> data_frame;
         };
+
+        std::vector<double> AFdeflects;     // list of known dimension values for the airframe
+        std::vector<double> AFmachs;
+        std::vector<double> AFalphas;
+        std::vector<double> AFbetas;
 
         // airframe total polars constructors and setters
         FMDataLoader::FMDataLoader();                                                                                         // constructor which collects all properly located and structured files and sets up the class's internal data frame, airframe_polars
@@ -101,8 +117,9 @@
         std::map<std::tuple<std::string, double, double, double, double>, double> airframe_polars;  // main store of polars
 
         void FMDataLoader::loadVSPcsv(std::filesystem::path);  // utility function to load flight data straight from OpenVSP history.csv during construction
-
+        static std::vector<double> FMDataLoader::getNearest(std::vector<double>& dim, double key);
         std::vector<std::pair<std::string, std::vector<double>>> FMDataLoader::loadcsv(std::filesystem::path);  // TODO utility function to bulk load tabular CSV data
-
     };
+
+
 
