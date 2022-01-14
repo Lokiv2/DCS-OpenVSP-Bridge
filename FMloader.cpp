@@ -108,31 +108,26 @@ std::vector<std::string> paramlist interesting_params;
         return result;
     }
 
+
     FMDataLoader::FMDataLoader() {
-        // scans the \Saved Games\DCS.openbeta\Mods\aircraft\Project-Lancaster\bin\ directory for csv files, assumed to be OpenVSP history files, and constructs an accessible data structure from them.
+    }
 
-        std::string userdir = std::string(getenv("USERPROFILE"));
-        std::filesystem::path p;
 
-        if (!userdir.empty())
+    FMDataLoader::FMDataLoader(std::filesystem::path p) {
+        // scans the /config/ directory for csv files, assumed to be OpenVSP history files, and constructs an accessible data structure from them.
+
+        if (p == "")
         {
-            p = userdir + "\\Saved Games\\DCS.openbeta\\Mods\\aircraft\\" + MOD_FOLDER + "\\bin\\";
-            //std::cout << "Loading FM data from ... " << p.string() << std::endl;
-            if (verbose) printf("Loading FM data from %s\n", p.c_str());
+             if (!silent) printf("No user path");
         }
-        else
-        {
-            if (!silent) printf("No user path");
-        }
+
+        if (!silent) printf("\nInitializing FM from %s\n", p.c_str());
 
         for (const auto& entry : std::filesystem::directory_iterator(p))
         {
-
             if (entry.path().extension().compare(".csv") == 0)
             {
                 foundfilelist.push_back(entry.path().stem());
-                // printf("Loading %s \n", entry.path().string().c_str());
-
                 FMDataLoader::loadVSPcsv(entry.path());
             }
         }

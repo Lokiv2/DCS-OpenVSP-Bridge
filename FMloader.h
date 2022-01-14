@@ -94,7 +94,8 @@
         std::vector<double> AFbetas;
 
         // airframe total polars constructors and setters
-        FMDataLoader::FMDataLoader();                                                                                         // constructor which collects all properly located and structured files and sets up the class's internal data frame, airframe_polars
+        FMDataLoader::FMDataLoader();                                                                                         // basic default constructor
+        FMDataLoader::FMDataLoader(std::filesystem::path p);                                                                  // constructor which collects all properly located and structured files and sets up the class's internal data frame, airframe_polars
         void insertPolar(std::string param, double deflect, double mach, double alpha, double beta, double value);            // add a new polar value at given defletion/mach/alpha/beta
 
         // convenient accessors for polars and individual values 
