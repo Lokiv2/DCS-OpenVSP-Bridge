@@ -11,15 +11,17 @@ OpenVSP result file parser
 
 
     CRASH COURSE:
-    - change the #def's below to match your folder and params needed
     - compile FMloaded.h and FMloader.cpp into your project
-    - place 1 or more unmodified OpenVSP history.csv files (can be renamed) in /bin within your mod folder (usually alongside your EFM .dll)
+    - place 1 or more unmodified OpenVSP history.csv files (can be renamed) in /config (or other path specificed in entry.lua) within your mod folder
     - In your FM code add:
 
-    void fm_initialize()  // to initialize the data object and ingest OpenVSP files
+    static FMDataLoader FMData()
+    
+    
+    void ed_fm_configure(const char* cfg_path)
     {...
-        FMDataLoader FMdata = FMDataLoader(); // load and store FM data
-    ...}
+	FMdata = FMDataLoader(cfg_path); // load and store FM data
+     ...}
 
     void ed_fm_simulate(double dt)
     {...
