@@ -20,32 +20,43 @@ std::vector<std::string> paramlist interesting_params;
         insert(p, d, m, a, b, val);
     }
 
-    // insert 1 new param value
+    // Insert 1 new param value into the element's data frame.  If the value already exists, add the new value to the existing.
+    // This supports the case where VSPAero breaks up elements into their degen component parts and names them all the same.
+    // In that case we expect that the total observable forces and moments of the object are the sum of degen components.
     void FMDataLoader::FMElementData::insert(std::string param, double deflect, double mach, double alpha, double beta, double value) {
 
- 
-        if (find(ELdeflects.begin(), ELdeflects.end(), deflect) == ELdeflects.end())  // if new element, add it to the unique list of elements
+        //printf("Starting new insert into %s\n", this->name);
+        if (find(ELdeflects.begin(), ELdeflects.end(), deflect) == ELdeflects.end())  // if new deflection, add it to the unique list of elements
         {
-            ELdeflects.push_back(deflect);
+            this->ELdeflects.push_back(deflect);
         }
 
         if (find(ELmachs.begin(), ELmachs.end(), mach) == ELmachs.end())  // if new mach, add it to the unique list of machs
         {
-            ELmachs.push_back(mach);
+            this->ELmachs.push_back(mach);
         }
 
         if (find(ELalphas.begin(), ELalphas.end(), alpha) == ELalphas.end())  // if new alpha, add it to the unique list of alphas
         {
-            ELalphas.push_back(alpha);
+            this->ELalphas.push_back(alpha);
         }
 
         if (find(ELbetas.begin(), ELbetas.end(), beta) == ELbetas.end())  // if new beta, add it to the unique list of betas
         {
-            ELbetas.push_back(beta);
+            this->ELbetas.push_back(beta);
         }
 
-        data_frame.insert({ make_tuple(param, deflect, mach, alpha, beta), value });
-        if (verbose) printf("Inserted value %f for param %s in element %s\n", value, param.c_str(), name.c_str());
+        auto curKey = data_frame.find(make_tuple(param, deflect, mach, alpha, beta));
+
+        if (curKey != data_frame.end())  // if this key already exists 
+        {
+            curKey->second = curKey->second + value;
+            if (verbose) printf("Updated value %f for param %s in element %s\n", value, param.c_str(), this->name.c_str());
+        }
+        else {
+            data_frame.insert(make_pair(make_tuple(param, deflect, mach, alpha, beta), value));
+            if (verbose) printf("Inserted value %f for param %s in element %s\n", value, param.c_str(), this->name.c_str());
+        }
     }
 
 
@@ -113,6 +124,17 @@ std::vector<std::string> paramlist interesting_params;
     }
 
 
+    std::vector<std::string> FMDataLoader::ListElementNames()
+    {
+        std::vector<std::string> elist;
+        for (auto& e : elements)
+        {
+            elist.push_back(e.name);
+        }
+        return elist;
+    }
+
+
     FMDataLoader::FMDataLoader(std::filesystem::path p) {
         // scans the /config/ directory for csv files, assumed to be OpenVSP history files, and constructs an accessible data structure from them.
 
@@ -136,14 +158,24 @@ std::vector<std::string> paramlist interesting_params;
 
     // mechanics of opening and reading a CSV into usable std::vectors
     // parts adapted from https ://www.gormanalysis.com/blog/reading-and-writing-csv-files-with-cpp/ 
-    std::vector<std::pair<std::string, std::vector<double>>> FMDataLoader::loadcsv(std::filesystem::path filename)
+    void FMDataLoader::loadcsv(std::filesystem::path filename)
     {
 
-        std::vector<std::pair<std::string, std::vector<double>>> result;
+        std::vector<std::pair<std::tuple<std::string, double, double, double, double>, double>> results;
+        std::tuple<std::string, double, double, double, double> temp_key;
 
-        std::string line, colname;
+        std::string header, line;
         double val;
         int num_lines = 0;
+        int alpha_idx;
+        int beta_idx;
+        int mach_idx;
+        int deflect_idx;
+        int element_idx;
+        std::vector<std::string> param_names;
+
+        bool is_elementwise = false;  // if we find element names lets get ready to record them properly
+        std::vector<std::string> knownElems;
 
         std::ifstream myFile(filename.string());
 
@@ -154,56 +186,106 @@ std::vector<std::string> paramlist interesting_params;
         // Read the column names
         if (myFile.good())
         {
-            //    std::cout << "file is good" << std::endl;
-                // Extract the first line in the file
-            std::getline(myFile, line);
+            // Extract the first line in the file
+            std::getline(myFile, header);
+            std::stringstream ss(header);
 
-            // Create a std::stringstream from line
-            std::stringstream ss(line);
+            // Extract each param name
+            std::string t;
+            int i = 0;
+            while (std::getline(ss, t, ','))
+            {
+                param_names.push_back(t);
 
-            // Extract each column name
-            while (std::getline(ss, colname, ',')) {
-
-                // Initialize and add <colname, int std::vector> pairs to result
-                result.push_back({ colname,{} });
+                // remember which column special flight condition params are in so we can key on this for insert into data frame
+                if (t == "AoA" || t == "Alpha") alpha_idx = i;
+                else if (t == "Beta") beta_idx = i;
+                else if (t == "Mach") mach_idx = i;
+                else if (t == "Deflection" || t == "Deflect_deg") deflect_idx = i;
+                else if (t == "Element")
+                {
+                    element_idx = i;
+                    is_elementwise = true;
+                    knownElems = ListElementNames();
+                }
+                i++;
                 //      std::cout << colname << std::endl;
             }
-        }
 
+            // Read data, line by line
+            while (std::getline(myFile, line))
+            {
+                std::string row_element;
+                double row_deflect;
+                double row_mach;
+                double row_alpha;
+                double row_beta;
+                bool dim_polar_complete = false; // do we have all flight condition keys?
+                bool dim_element_complete = false;  // do we know the element (is there one?)
+                // Create a std::stringstream of the current line
+                std::stringstream ss(line);
 
+                // Keep track of the current column index
+                int colIdx = 0;
+                std::vector<std::pair<int, double>> val_cache;
 
-        // Read data, line by line
-        while (std::getline(myFile, line))
-        {
-            // Create a std::stringstream of the current line
-            std::stringstream ss(line);
+                // Extract data into a vector
+                while (std::getline(ss, t, ','))
+                {
+                    if (colIdx == alpha_idx) row_alpha = stod(t);
+                    else if (colIdx == beta_idx) row_beta = stod(t);
+                    else if (colIdx == mach_idx) row_mach = stod(t);
+                    else if (colIdx == deflect_idx) row_deflect = stod(t);
+                    else if (colIdx == element_idx) row_element = t;
+                    else
+                    {
+                        val_cache.push_back(std::make_pair(colIdx, stod(t)));
+                    }   // store values in vector
+                    colIdx++;
+                }
 
-            // Keep track of the current column index
-            int colIdx = 0;
+                if (dim_polar_complete && dim_element_complete && is_elementwise)  // if we have all necessary keys for insert into elements ( we can't do this inline in case some params preceed alpha,beta or mach in the column order
+                {
+                    for (auto& pair : val_cache)
+                    {
+                        if (std::find(knownElems.begin(), knownElems.end(), row_element) == knownElems.end())
+                        {
+                            // if this is a previously unknown element
+                            elements.push_back(FMElementData(row_element, param_names[pair.first], row_deflect, row_mach, row_alpha, row_beta, pair.second));
+                            knownElems.push_back(row_element);
+                        }
+                        else
+                        {
+                            int elIdx = 0;
+                            for (auto& m : elements)
+                            {
+                                if (!(m.name.compare(row_element)))
+                                {
+                                    break;
+                                }
+                                elIdx++;
+                            }
+                            // if this is a known element
+                            elements[elIdx].insert(param_names[pair.first], row_deflect, row_mach, row_alpha, row_beta, pair.second); //TODO what if this already exists?
+                        }
+                    }
+                }
+                else if (dim_polar_complete)
+                {
+                    for (auto& pair : val_cache)
+                    {
+                        insertPolar(param_names[pair.first], row_deflect, row_mach, row_alpha, row_beta, pair.second);
+                    }
+                }
+                if (!silent) std::cout << "Loaded " << num_lines << "lines" << std::endl;
+                // Close file
+                myFile.close();
+                std::cout << "FM Loading Complete!";
 
-            // Extract each integer
-            while (ss >> val) {
-
-                // Add the current integer to the 'colIdx' column's values std::vector
-                result.at(colIdx).second.push_back(val);
-
-                // If the next token is a comma, ignore it and move on
-                if (ss.peek() == ',') ss.ignore();
-
-                // Increment the column index
-                colIdx++;
             }
-            num_lines += 1;
         }
-
-        if (!silent) std::cout << "Loaded " << num_lines << "lines" << std::endl;
-
-        // Close file
-        myFile.close();
-        std::cout << "FM Loading Complete!";
-
-        return result;
     }
+
 
 
 
@@ -213,8 +295,8 @@ std::vector<std::string> paramlist interesting_params;
     {
         if(!silent) printf("Processing %s\n", filename.string().c_str());
 
-        AFdeflects.push_back(0.0); // temp until we have a way to get this from data
-        std::vector<std::string> elem;      // remember the elements we've found in the results, this should be stable for any single VSP history file.
+        AFdeflects.push_back(0.0);      // temp until we have a way to get this from data
+
         std::vector<double> deflects = { 0.0 };
         std::vector<double> alphas;
         std::vector<double> betas;
@@ -300,10 +382,10 @@ std::vector<std::string> paramlist interesting_params;
                 if (std::get<1>(page).compare("VSPAERO_Polar") == 0) 
                 {
                     std::string l;
-                    if (verbose) printf("Found a useful page of polars \n%s \n", std::get<0>(page).c_str());
+                    if (verbose) printf("Found a useful page of polars \n%s \n", page.first.c_str());
                     std::vector<std::tuple<std::string, std::vector<double>>>  param_cache;
 
-                    std::stringstream pagestream(std::get<0>(page));
+                    std::stringstream pagestream(page.first);
                     while (getline(pagestream, l, '\n'))  // get the next line from the page
                     {
                         std::string t;
@@ -375,7 +457,6 @@ std::vector<std::string> paramlist interesting_params;
                         int col_indx = 0;
                         for (auto& val : std::get<1>(param))
                         {
-                        //    printf("trying to insert new polar %s %f", std::get<0>(param).c_str(), val);
                             insertPolar(std::get<0>(param), deflection, machs[col_indx], alphas[col_indx], betas[col_indx], val);
                             col_indx++;
                         }
@@ -383,92 +464,142 @@ std::vector<std::string> paramlist interesting_params;
                 }
 
                 // element-wise parameter loading..
-                if (std::get<1>(page).compare("VSPAERO_Comp_Load")==0)
+           
+                if (page.second.compare("VSPAERO_Comp_Load")==0)
                 {
                     std::string l;
-                    if (verbose) printf("Found a useful result page %s \n", std::get<0>(page).c_str());
+                    std::vector<std::pair<std::string, std::vector<double>>> page_values;
+                    std::vector<std::string> elem;  // remember the elements we've found in the results, this should be stable for any single VSP history file.
 
-                    std::stringstream pagestream(std::get<0>(page));
-                    while (getline(pagestream, l,'\n'))  // get the next line from the page
+
+                    if (verbose) printf("Found a useful result page %s \n", page.first.c_str());
+
+                    // process each line according to what it is
+                    std::stringstream pagestream(page.first);
+
+                    while (getline(pagestream, l, '\n'))  // get the next line from the page
                     {
                         std::string t;
                         std::stringstream linestream(l);
-                        while (getline(linestream, t, ','))
+
+                        getline(linestream, t, ',');
+                        
+                        if (t.compare("AoA") == 0)
                         {
-                            if (t.compare("AoA") == 0)
+                            std::string x;
+                            getline(linestream, x, ','); // record alpha for this page (its the same for all columns in page)
+                            alpha = stod(x);
+                            if (std::find(alphas.begin(), alphas.end(), alpha) == alphas.end())
                             {
-                                std::string x;
-                                getline(linestream, x, ','); // record alpha for this page (its the same for all columns in page)
-                                alpha = stod(x);
-                                if (std::find(alphas.begin(), alphas.end(), alpha) != alphas.end())
-                                {
-                                    alphas.push_back(alpha);
-                                }
+                                alphas.push_back(alpha);
                             }
-                            else if (t.compare("Beta") == 0)
+                        }
+                        else if (t.compare("Beta") == 0)
+                        {
+                            std::string x;
+                            getline(linestream, x, ','); // record beta for this page (its the same for all columns in page)
+                            beta = stod(x);
+                            if (std::find(betas.begin(), betas.end(), beta) == betas.end())
                             {
-                                std::string x;
-                                getline(linestream, x, ','); // record beta for this page (its the same for all columns in page)
-                                beta = stod(x);
-                                if (std::find(betas.begin(), betas.end(), beta) != betas.end())
-                                {
-                                    betas.push_back(beta);
-                                }
+                                betas.push_back(beta);
                             }
-                            else if (t.compare("Mach") == 0)
+                        }
+                        else if (t.compare("Mach") == 0)
+                        {
+                            std::string x;
+                            getline(linestream, x, ','); // record mach for this page (its the same for all columns in page)
+                            mach = stod(x);
+                            if (std::find(machs.begin(), machs.end(), mach) == machs.end())
                             {
-                                std::string x;
-                                getline(linestream, x, ','); // record mach for this page (its the same for all columns in page)
-                                mach = stod(x);
-                                if (std::find(machs.begin(), machs.end(), mach) != machs.end())
-                                {
-                                     machs.push_back(mach);
-                                }
+                                machs.push_back(mach);
                             }
-                            else if (t.compare("Comp_Name") == 0)
+                        }
+                        else if (t.compare("Comp_Name") == 0)
+                        {
+                            std::string x;
+                            bool found = false;
+                            while (getline(linestream, x, ','))
                             {
-                                std::string x;
+                                printf("%s\t", x.c_str());
+                                elem.push_back(x);  // add this to the vector of param ordering
+
+                                // but is this elem already initialized as an object?
                                 bool found = false;
-                                while (getline(linestream, x, ','))
+                                for (auto& e : elements)
                                 {
-                                  //  printf("%s\t", x.c_str());
-                                    found = false;
-                                    for (auto& el : elem) {
-                                        if (x.compare(el)==0)
-                                        {
-                                            found = true;
-                                            //printf("Known elems %s",el.c_str());
-                                        }
-                                    }
-                                    if (!found && x != "") {
-                                        elem.push_back(x);  // hooray we identified a previously unknown element
-                                        if (verbose) printf("New element identified %s\n", x.c_str());
-                                    }
-                                }
-                            }
-                            else if (std::find(paramlist.begin(), paramlist.end(), t) != paramlist.end())
-                            //else if (t.compare("CDi") == 0 || t.compare("CFx") == 0 || t.compare("CFy") == 0 || t.compare("CFz") == 0 || t.compare("CL") == 0 || t.compare("Cmx") == 0 || t.compare("Cmy") == 0 || t.compare("Cmz") == 0 || t.compare("Cms") == 0)
-                            {
-                                std::string x;
-                                int elem_iter = 0;
-                                while (getline(linestream, x, ',')) 
-                                {
-                                    try
+                                    if (e.name == x)
                                     {
-                                        elements.push_back(FMElementData(elem.at(elem_iter), t, deflection, mach, alpha, beta, stod(x)));
-                                        if (verbose) printf("Value %f pushed \n", stod(x));
-                                        elem_iter++;
-                                    }
-                                    catch (const std::out_of_range& oor) {
-                                        if (!silent) printf("Element not found for %d %f\n", elem_iter, stod(x));
+                                        found = true;
                                     }
                                 }
+                                if (!found)
+                                {
+                                    elements.push_back(FMElementData(x)); // initialize the new element
+                                    if (verbose) printf("New element identified and inserted %s\n", x.c_str());
+                                }
                             }
+                        }
+                        else if (std::find(paramlist.begin(), paramlist.end(), t) != paramlist.end())  // if I care about the parameter I found, vectorize the line contents
+                        {
+                            if (verbose) printf("Vectorizing param list %s\n", t.c_str());
+                            std::vector<double> vals;
+                            std::string x;
+                            while (getline(linestream, x, ','))
+                            {
+                                vals.push_back(stod(x));
+                            }
+
+                            page_values.push_back(make_pair(t, vals));
+                        }
+                        
+                    }
+
+                    // populate page contents into appropriate element objects
+                    for (auto & el : elements)
+                    {
+                        for (auto & e : elem)
+                        {
+                            int w = 0;
+                            if (e == el.name)
+                            {
+                                for (auto& v : page_values)
+                                {
+                                    el.insert(v.first, deflection, mach, alpha, beta, v.second[w]);
+                                }
+                            }
+                            w++;
                         }
                     }
                 }
             }
         }
+
+        //int elem_iter = 0;
+        //std::vector<FMElementData>::iterator curEl = elements.begin();
+        //while (getline(linestream, x, ','))
+        //{
+        //    printf("%s\t", x.c_str());
+
+        //    while (curEl != elements.end())  // locate the FMElementData object with this name
+        //    {
+        //        if (curEl->name.compare(elem[elem_iter]) == 0)
+        //        {
+        //            printf("Found element%s\n", curEl->name);
+        //            break;
+        //        }
+        //        curEl = std::next(curEl, 1);
+        //    }
+
+        //    try
+        //    {
+        //        curEl->insert(t, deflection, mach, alpha, beta, stod(x));
+        //        if (verbose) printf("Value %f pushed \n", stod(x));
+        //        elem_iter++;
+        //    }
+        //    catch (const std::out_of_range& oor) {
+        //        if (!silent) printf("Element not found for %d %f\n", elem_iter, stod(x));
+        //    }
+        //}
 
         myFile.close();
         std::sort(AFdeflects.begin(), AFdeflects.end());
@@ -492,7 +623,7 @@ std::vector<std::string> paramlist interesting_params;
 
         for (auto& x : airframe_polars)
         {
-            if (!silent) printf("%s, %f, %f, %f, %f = \t%f\n", std::get<0>(std::get<0>(x)), std::get<1>(std::get<0>(x)), std::get<2>(std::get<0>(x)), std::get<3>(std::get<0>(x)), std::get<4>(std::get<0>(x)), std::get<1>(x));
+            if (!silent) printf("%s, %f, %f, %f, %f = \t%f\n", std::get<0>(x.first).c_str(), std::get<1>(x.first), std::get<2>(x.first), std::get<3>(x.first), std::get<4>(x.first), x.second);
         }
     }
 
@@ -563,7 +694,7 @@ std::vector<std::string> paramlist interesting_params;
     void FMDataLoader::insertPolar(std::string param, double deflect, double mach, double alpha, double beta, double value) 
     {
   //      printf("\nTrying to insert %s, %f, %f, %f, %f, %f\n", param, deflect, mach, alpha, beta, value);
-
+        
         try
         {
             if (!std::get<1>(airframe_polars.insert({ make_tuple(param, deflect, mach, alpha, beta), value })))
@@ -576,6 +707,12 @@ std::vector<std::string> paramlist interesting_params;
         catch (const std::exception& e) { 
             if (!silent) printf("%s",e.what());
         }
+        // update the list of known dimensions
+        if (std::find(AFdeflects.begin(), AFdeflects.end(), deflect) != AFdeflects.end()) { AFdeflects.push_back(deflect); std::sort(AFdeflects.begin(), AFdeflects.end()); }
+        if (std::find(AFmachs.begin(), AFmachs.end(), deflect) != AFmachs.end()) {      AFmachs.push_back(deflect);     std::sort(AFmachs.begin(), AFmachs.end()); }
+        if (std::find(AFalphas.begin(), AFalphas.end(), deflect) != AFalphas.end()) {   AFalphas.push_back(deflect);    std::sort(AFalphas.begin(), AFalphas.end()); }
+        if (std::find(AFbetas.begin(), AFbetas.end(), deflect) != AFbetas.end()) {      AFbetas.push_back(deflect);     std::sort(AFbetas.begin(), AFbetas.end()); }
+
     }
 
     double FMDataLoader::getPolar(std::string param, double deflect, double mach, double alpha, double beta)
@@ -620,7 +757,7 @@ std::vector<std::string> paramlist interesting_params;
             return std::vector(0.0, 0.0);
         }
 
-        if (verbose) printf("getting nearest %f in %d\n", key, dim.size() );
+        if (verbose) printf("getting nearest %d in %d\n", key, dim.size() );
 
         std::vector<double> result{ *search_start, *search_start };  // initialize the return with the case where the dim has only 1 value
 

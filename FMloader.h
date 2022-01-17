@@ -51,9 +51,6 @@
 */
 
 
-
-#define MOD_FOLDER "Project-Lancaster"  //TODO detect mod folder name within DCS.openbeta/mods/aircraft
-
 #define verbose false
 #define silent false
 
@@ -101,13 +98,12 @@
         // convenient accessors for polars and individual values 
         double  FMDataLoader::getFMParam(std::string element, std::string param, double deflect, double mach, double alpha, double beta); // get a single parameter value for an element designated by name (as opposed to object reference)
         double FMDataLoader::getPolar(std::string param, double deflect, double mach, double alpha, double beta);             // get individual polar value
-        std::vector<double> FMDataLoader::getPolarList(std::string param, double deflect, double mach, double alpha, double beta);     // get a given parameter as a flat vector
 
-
-
-        // entire class instance exporter for use elsewhere
+        // entire class instance exporters and util functions
         FMElementData& getCompleteElement(std::string element);                                                               // get one entire element object
         std::vector<double>  FMDataLoader::getFMParamVector(std::string element, std::string param);                          // get aero coeffiecient as flat std::vector of choice for given element from loaded CSV data
+        std::vector<std::string> FMDataLoader::ListElementNames();
+
 
 
 
@@ -118,8 +114,9 @@
         std::map<std::tuple<std::string, double, double, double, double>, double> airframe_polars;  // main store of polars
 
         void FMDataLoader::loadVSPcsv(std::filesystem::path);  // utility function to load flight data straight from OpenVSP history.csv during construction
+        void FMDataLoader::loadcsv(std::filesystem::path);  // utility function to load flight data straight from OpenVSP history.csv during construction
         static std::vector<double> FMDataLoader::getNearest(std::vector<double>& dim, double key);
-        std::vector<std::pair<std::string, std::vector<double>>> FMDataLoader::loadcsv(std::filesystem::path);  // TODO utility function to bulk load tabular CSV data
+       // std::vector<std::pair<std::string, std::vector<double>>> FMDataLoader::loadcsv(std::filesystem::path);  // TODO utility function to bulk load tabular CSV data
     };
 
 
