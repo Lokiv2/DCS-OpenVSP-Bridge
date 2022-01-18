@@ -51,7 +51,7 @@
 */
 
 
-#define verbose false
+#define verbose true
 #define silent false
 
 // which params do we care about loading

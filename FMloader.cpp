@@ -67,8 +67,6 @@ std::vector<std::string> paramlist interesting_params;
         // par names are same as OpenVSP nomenclature (CL, Cmx, CDi, etc)
 
         double result = 0.0;
-        std::vector<double> x1;
-
         std::vector<double> def_proxy = getNearest(ELdeflects, alpha);
         std::vector<double> mach_proxy = getNearest(ELmachs, alpha);
         std::vector<double> alph_proxy = getNearest(ELalphas, alpha);
@@ -297,10 +295,7 @@ std::vector<std::string> paramlist interesting_params;
 
         AFdeflects.push_back(0.0);      // temp until we have a way to get this from data
 
-        std::vector<double> deflects = { 0.0 };
-        std::vector<double> alphas;
-        std::vector<double> betas;
-        std::vector<double> machs;
+
 
         std::map<std::tuple< std::string, std::string, double, double, double, double>, double> result;
         // <parameter, map<key=<deflection, mach, alpha, beta>, value=parameter value>>>
@@ -376,6 +371,11 @@ std::vector<std::string> paramlist interesting_params;
                 double beta;
                 double mach;
 
+                std::vector<double> deflects = { 0.0 };
+                std::vector<double> alphas;
+                std::vector<double> betas;
+                std::vector<double> machs;
+
                 if (verbose) printf("Processing... \n%s\n", std::get<1>(page).c_str());
 
                 // airframe-total parameter loading
@@ -394,10 +394,9 @@ std::vector<std::string> paramlist interesting_params;
                         std::stringstream linestream(l);
                         getline(linestream, t, ',');
 
-                        if (verbose) printf("Checking token \t%s", t.c_str());
+                        if (verbose) printf("Checking token \t%s\n", t.c_str());
                         if (t == "Alpha")
                         {
-                            //   std::string x;
                             while (getline(linestream, t, ',')) // record alphas for this page in order 
                             {
                                 if (std::find(AFalphas.begin(), AFalphas.end(), stod(t)) == AFalphas.end())
@@ -410,8 +409,7 @@ std::vector<std::string> paramlist interesting_params;
                         }
                         else if (t == "Beta")
                         {
-                            //    std::string x;
-                            while (getline(linestream, t, ',')) // record betas for this page in order
+                            while(getline(linestream, t, ',')) // record betas for this page in order
                             {
                                 if (std::find(AFbetas.begin(), AFbetas.end(), stod(t)) == AFbetas.end())
                                 {
@@ -424,8 +422,7 @@ std::vector<std::string> paramlist interesting_params;
                         }
                         else if (t == "Mach")
                         {
-                            // std::string x;
-                            while (getline(linestream, t, ',')) // record machs list for this page in order
+                            while(getline(linestream, t, ',')) // record machs list for this page in order
                             {
                                 if (std::find(AFmachs.begin(), AFmachs.end(), stod(t)) == AFmachs.end())
                                 {
@@ -436,7 +433,6 @@ std::vector<std::string> paramlist interesting_params;
                                 machs.push_back(stod(t));
                             }
                         }
-                        // else if (t.compare("CDi") == 0 || t.compare("CDo") == 0 || t.compare("CDtot") == 0 || t.compare("CFx") == 0 || t.compare("CFy") == 0 || t.compare("CFz") == 0 || t.compare("CL") == 0 || t.compare("Cmx") == 0 || t.compare("Cmy") == 0 || t.compare("Cmz") == 0 || t.compare("Cms") == 0 || t.compare("CS"))
                         else if (std::find(paramlist.begin(), paramlist.end(), t) != paramlist.end())
                         {
                             std::string x;
@@ -489,30 +485,30 @@ std::vector<std::string> paramlist interesting_params;
                             std::string x;
                             getline(linestream, x, ','); // record alpha for this page (its the same for all columns in page)
                             alpha = stod(x);
-                            if (std::find(alphas.begin(), alphas.end(), alpha) == alphas.end())
-                            {
-                                alphas.push_back(alpha);
-                            }
+                            //if (std::find(alphas.begin(), alphas.end(), alpha) == alphas.end())
+                            //{
+                            //    alphas.push_back(alpha);
+                            //}
                         }
                         else if (t.compare("Beta") == 0)
                         {
                             std::string x;
                             getline(linestream, x, ','); // record beta for this page (its the same for all columns in page)
                             beta = stod(x);
-                            if (std::find(betas.begin(), betas.end(), beta) == betas.end())
-                            {
-                                betas.push_back(beta);
-                            }
+                            //if (std::find(betas.begin(), betas.end(), beta) == betas.end())
+                            //{
+                            //    betas.push_back(beta);
+                            //}
                         }
                         else if (t.compare("Mach") == 0)
                         {
                             std::string x;
                             getline(linestream, x, ','); // record mach for this page (its the same for all columns in page)
                             mach = stod(x);
-                            if (std::find(machs.begin(), machs.end(), mach) == machs.end())
-                            {
-                                machs.push_back(mach);
-                            }
+                            //if (std::find(machs.begin(), machs.end(), mach) == machs.end())
+                            //{
+                            //    machs.push_back(mach);
+                            //}
                         }
                         else if (t.compare("Comp_Name") == 0)
                         {
@@ -607,23 +603,36 @@ std::vector<std::string> paramlist interesting_params;
         std::sort(AFalphas.begin(), AFalphas.end());
         std::sort(AFbetas.begin(), AFbetas.end());
 
-        if (!silent) 
+        if (!silent)
         {
-            if (!silent) printf("FM Loading Complete!\n");
-            if (!silent) printf("\nDeflections: \n");
+            printf("FM Loading Complete!\n");
+            printf("\nDeflections: \n");
             for (auto& x : AFdeflects) { printf("%f\t", x); }
-            if (!silent) printf("\nMachs: \n");
+             printf("\nMachs: \n");
             for (auto& x : AFmachs) { printf("%f\t", x); }
-            if (!silent) printf("\nAlphas: \n");
+            printf("\nAlphas: \n");
             for (auto& x : AFalphas) { printf("%f\t", x); }
-            if (!silent) printf("\nBetas: \n");
+            printf("\nBetas: \n");
             for (auto& x : AFbetas) { printf("%f\t", x); }
-            if (!silent) printf("\n");
-        }
+            printf("\n");
 
-        for (auto& x : airframe_polars)
-        {
-            if (!silent) printf("%s, %f, %f, %f, %f = \t%f\n", std::get<0>(x.first).c_str(), std::get<1>(x.first), std::get<2>(x.first), std::get<3>(x.first), std::get<4>(x.first), x.second);
+            for (auto& e : elements)
+            {
+                printf("\n Element: %s\n", e.name.c_str());
+                for (auto& x : e.ELdeflects) { printf("%f\t", x); }
+                printf("\nMachs: \n");
+                for (auto& x : e.ELmachs) { printf("%f\t", x); }
+                printf("\nAlphas: \n");
+                for (auto& x : e.ELalphas) { printf("%f\t", x); }
+                printf("\nBetas: \n");
+                for (auto& x : e.ELbetas) { printf("%f\t", x); }
+                printf("\n");
+
+            }
+            for (auto& x : airframe_polars)
+            {
+                printf("%s, %f, %f, %f, %f = \t%f\n", std::get<0>(x.first).c_str(), std::get<1>(x.first), std::get<2>(x.first), std::get<3>(x.first), std::get<4>(x.first), x.second);
+            }
         }
     }
 
@@ -641,7 +650,7 @@ std::vector<std::string> paramlist interesting_params;
             l++;
         }
 
-        if (found_index < 0) { printf("\n not found in data! Be sure to use same element names as the OpenVSP output\n"); }
+        if (found_index < 0) { printf("\n Not found in data! Be sure to use same element names as the OpenVSP output\n"); }
         return elements.at(found_index);
     }
 
@@ -708,10 +717,10 @@ std::vector<std::string> paramlist interesting_params;
             if (!silent) printf("%s",e.what());
         }
         // update the list of known dimensions
-        if (std::find(AFdeflects.begin(), AFdeflects.end(), deflect) != AFdeflects.end()) { AFdeflects.push_back(deflect); std::sort(AFdeflects.begin(), AFdeflects.end()); }
-        if (std::find(AFmachs.begin(), AFmachs.end(), deflect) != AFmachs.end()) {      AFmachs.push_back(deflect);     std::sort(AFmachs.begin(), AFmachs.end()); }
-        if (std::find(AFalphas.begin(), AFalphas.end(), deflect) != AFalphas.end()) {   AFalphas.push_back(deflect);    std::sort(AFalphas.begin(), AFalphas.end()); }
-        if (std::find(AFbetas.begin(), AFbetas.end(), deflect) != AFbetas.end()) {      AFbetas.push_back(deflect);     std::sort(AFbetas.begin(), AFbetas.end()); }
+        if (std::find(AFdeflects.begin(), AFdeflects.end(), deflect) == AFdeflects.end()) { AFdeflects.push_back(deflect); std::sort(AFdeflects.begin(), AFdeflects.end()); }
+        if (std::find(AFmachs.begin(), AFmachs.end(), mach) == AFmachs.end()) {         AFmachs.push_back(mach);        std::sort(AFmachs.begin(), AFmachs.end()); }
+        if (std::find(AFalphas.begin(), AFalphas.end(), alpha) == AFalphas.end()) {     AFalphas.push_back(alpha);      std::sort(AFalphas.begin(), AFalphas.end()); }
+        if (std::find(AFbetas.begin(), AFbetas.end(), beta) == AFbetas.end()) {         AFbetas.push_back(beta);        std::sort(AFbetas.begin(), AFbetas.end()); }
 
     }
 
@@ -724,19 +733,32 @@ std::vector<std::string> paramlist interesting_params;
 
         double a, b;
         double result = 0.0;
+        double d_bias = 0.0;
+        double m_bias = 0.0;
+        double a_bias = 0.0;
+        double b_bias = 0.0;
 
         try {
-            a = airframe_polars.at(make_tuple(param, def_proxy[0], mach_proxy[0], alph_proxy[0], beta_proxy[0]));
             if (verbose) printf("a test %s %f %f %f %f\n", param.c_str(), def_proxy[0], mach_proxy[0], alph_proxy[0], beta_proxy[0]);
+            a = airframe_polars.at(make_tuple(param, def_proxy[0], mach_proxy[0], alph_proxy[0], beta_proxy[0]));
 
-            b = airframe_polars.at(make_tuple(param, def_proxy[1], mach_proxy[1], alph_proxy[1], beta_proxy[1]));
             if (verbose) printf("b test %s %f %f %f %f\n", param.c_str(), def_proxy[1], mach_proxy[1], alph_proxy[1], beta_proxy[1]);
+            b = airframe_polars.at(make_tuple(param, def_proxy[1], mach_proxy[1], alph_proxy[1], beta_proxy[1]));
 
+            if (a != b)
             {
-                if (verbose) printf("\nNearest are %f %f\n", a, b);
-                result = (a + b) / 2.0;         // TODO proper interpolation
-            }
+                if (def_proxy[0] != def_proxy[1]) d_bias = (def_proxy[0] - deflect) / (def_proxy[0] - def_proxy[1]);
+                if (def_proxy[0] != def_proxy[1]) m_bias = (mach_proxy[0] - deflect) / (mach_proxy[0] - mach_proxy[1]);
+                if (def_proxy[0] != def_proxy[1]) a_bias = (alph_proxy[0] - deflect) / (alph_proxy[0] - alph_proxy[1]);
+                if (def_proxy[0] != def_proxy[1]) b_bias = (beta_proxy[0] - deflect) / (beta_proxy[0] - beta_proxy[1]);
 
+
+                result = a + (b * (d_bias + m_bias + a_bias + b_bias) / 4.0);
+            }
+            else
+                result = a;
+
+            if (verbose) printf("\nResult %s is %f + (%f * (%f + %f + %f + %f)/4.0) = %f\n", param.c_str(), a, b, d_bias, m_bias, a_bias, b_bias, result);
         }
         catch (const std::out_of_range& oor) {
             if (!silent) printf("Polar value not found! %s %f %f %f %f\n", param.c_str(), deflect, mach, alpha, beta);
@@ -751,44 +773,24 @@ std::vector<std::string> paramlist interesting_params;
         std::vector<double>::iterator search_end = dim.end();
         std::vector<double>::iterator midpoint;
 
+        std::vector<double>  result;
+
         if (dim.size() < 1)
         {
             if (verbose) printf("getNearest: input array is empty!\n");
-            return std::vector(0.0, 0.0);
+            result = { 0.0, 0.0 };
         }
 
-        if (verbose) printf("getting nearest %d in %d\n", key, dim.size() );
+        if (verbose) printf("getting nearest %f in %d\n", key, dim.size() );
 
-        std::vector<double> result{ *search_start, *search_start };  // initialize the return with the case where the dim has only 1 value
+        auto lower = std::lower_bound(dim.begin(), dim.end(), key);
+        auto upper = std::upper_bound(dim.begin(), dim.end(), key);
 
-        // binary search through the list to find the nearest value match
-        while (std::distance(search_start, search_end) > 1)
-        {
-            double min = *std::min_element(search_start, search_end);  // get the min and max values
-            double max = *std::max_element(search_start, search_end);
 
-            // catch boundary conditions
-            if (key >= max) {
-                result = { *search_end, *search_end };  // key is beyond max range of dim
-        //        printf("off the max");
-                break;
-            }
-            else if (key <= min) {
-                result = { *search_start, *search_start }; //key is beyond min range of dim
-          //      printf("off the min");
-                break;
-            }
-
-            result =  {*search_start, *search_end};
-
-            // binary search bifurcation
-            midpoint = search_start + floor(std::distance(search_start, search_end) / 2.0);
-            if (midpoint != search_start && midpoint != search_end)
-            {
-                if (key > *midpoint) search_start = midpoint;
-                else search_end = midpoint;
-            }
-        } 
+        if (lower != dim.begin()) lower = std::prev(lower);
+        if (upper == dim.end()) upper = std::prev(upper);
+        result.push_back(*lower);
+        result.push_back(*upper);
 
         if(verbose) printf("Got nearest %f %f\n", result[0], result[1]);
         return result;
