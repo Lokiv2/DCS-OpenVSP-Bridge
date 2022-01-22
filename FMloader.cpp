@@ -50,8 +50,8 @@ std::vector<std::string> paramlist interesting_params;
 
         if (curKey != data_frame.end())  // if this key already exists 
         {
+            if (verbose) printf("Updating value %f for param %s in element %s from %f\n", value, param.c_str(), this->name.c_str(), curKey->second);
             curKey->second = curKey->second + value;
-            if (verbose) printf("Updated value %f for param %s in element %s\n", value, param.c_str(), this->name.c_str());
         }
         else {
             data_frame.insert(make_pair(make_tuple(param, deflect, mach, alpha, beta), value));
@@ -67,22 +67,51 @@ std::vector<std::string> paramlist interesting_params;
         // par names are same as OpenVSP nomenclature (CL, Cmx, CDi, etc)
 
         double result = 0.0;
-        std::vector<double> def_proxy = getNearest(ELdeflects, alpha);
-        std::vector<double> mach_proxy = getNearest(ELmachs, alpha);
-        std::vector<double> alph_proxy = getNearest(ELalphas, alpha);
-        std::vector<double> beta_proxy = getNearest(ELbetas, alpha);
         double a, b;
+        double d_bias = 0.0;
+        double m_bias = 0.0;
+        double a_bias = 0.0;
+        double b_bias = 0.0;
 
+
+        std::vector<double> def_proxy = getNearest(this->ELdeflects, deflect);
+        std::vector<double> mach_proxy = getNearest(this->ELmachs, mach);
+        std::vector<double> alph_proxy = getNearest(this->ELalphas, alpha);
+        std::vector<double> beta_proxy = getNearest(this->ELbetas, beta);
+
+
+        if (verbose) printf("\nLookup Element %s", this->name.c_str());
         try {
-            a = data_frame.at(make_tuple(param, def_proxy[0], mach_proxy[0], alph_proxy[0], beta_proxy[0]));
-            b = data_frame.at(make_tuple(param, def_proxy[1], mach_proxy[1], alph_proxy[1], beta_proxy[1]));
-            result = (a + b) / 2.0;
+            if (verbose) printf("a test %s %f %f %f %f\n", param.c_str(), def_proxy[0], mach_proxy[0], alph_proxy[0], beta_proxy[0]);
+            a = this->data_frame.at(make_tuple(param, def_proxy[0], mach_proxy[0], alph_proxy[0], beta_proxy[0]));
+
+            if (verbose) printf("b test %s %f %f %f %f\n", param.c_str(), def_proxy[1], mach_proxy[1], alph_proxy[1], beta_proxy[1]);
+            b = this->data_frame.at(make_tuple(param, def_proxy[1], mach_proxy[1], alph_proxy[1], beta_proxy[1]));
+
+            printf("%f, %f", a, b);
+            if (a != b)
+            {
+                if (def_proxy[0] != def_proxy[1]) d_bias = (def_proxy[0] - deflect) / (def_proxy[0] - def_proxy[1]);
+                if (def_proxy[0] != def_proxy[1]) m_bias = (mach_proxy[0] - mach) / (mach_proxy[0] - mach_proxy[1]);
+                if (def_proxy[0] != def_proxy[1]) a_bias = (alph_proxy[0] - alpha) / (alph_proxy[0] - alph_proxy[1]);
+                if (def_proxy[0] != def_proxy[1]) b_bias = (beta_proxy[0] - beta) / (beta_proxy[0] - beta_proxy[1]);
+
+
+                result = a + (b * (d_bias + m_bias + a_bias + b_bias) / 4.0);
+            }
+            else
+            {
+                result = a;
+                if (verbose) printf("\t out of mapped range");
+            }
+
+            if (verbose) printf("\nElement %s Result %s is %f + (%f * (%f + %f + %f + %f)/4.0) = %f\n", this->name.c_str(), param.c_str(), a, b, d_bias, m_bias, a_bias, b_bias, result);
         }
         catch (const std::out_of_range& oor) {
-            if (!silent) printf("FM param not found for %s %s %f %f %f %f \n", name.c_str(), param.c_str(), deflect, mach, alpha, beta);
+            result = 0.0;
+            if (!silent) printf("Element %s value not found! %s %f %f %f %f\n", this->name.c_str(), param.c_str(), deflect, mach, alpha, beta);
         }
         return result;
-
     }
 
 
@@ -115,6 +144,20 @@ std::vector<std::string> paramlist interesting_params;
             }
         }
         return result;
+    }
+
+    void FMDataLoader::FMElementData::printElement() {
+
+        printf("\nElement \t%s\n", this->name);
+        for (auto& p : data_frame)
+        {
+            printf("%s\t", std::get<0>(p.first));
+            printf("%f\t", std::get<1>(p.first));
+            printf("%f\t", std::get<2>(p.first));
+            printf("%f\t", std::get<3>(p.first));
+            printf("%f\t", std::get<4>(p.first));
+            printf("%f\n", p.second);
+        }
     }
 
 
@@ -312,7 +355,11 @@ std::vector<std::string> paramlist interesting_params;
         {
             // Extract first column in the file so we can paginate it
             std::string line;
+
             int linecount = 0;
+          //  int total_lines = std::count(std::istreambuf_iterator<char>(myFile), std::istreambuf_iterator<char>(), '\n');  // so we know when we're at the end of the file
+
+            //if (verbose) printf("Total lines = %d", total_lines);
 
             std::string p = "";      // we'll store each page here temporarily
             std::string cur_page_name = "VSPAERO_History";  // what type of VSP output is this page (elements? totals? other?)
@@ -325,7 +372,7 @@ std::vector<std::string> paramlist interesting_params;
                 std::stringstream ss(line); 
                 std::getline(ss, r, ',');       // get first comma-separate token in line
               
-                if (r.compare("Results_Name") == 0) // store the page start and corresponding VSP page name (e.g. VSPAERO_Comp_Load)
+                if (r.compare("Results_Name") == 0 ) // store the page start and corresponding VSP page name (e.g. VSPAERO_Comp_Load)
                 {
                     if (p.length() > 0) pages.push_back(make_pair(p, cur_page_name));   // since we're now starting a new page, let's save the previous page to the vector of pages.  Note cur_page_name is still storing the previous pages name.
                     p = "";                                         // reset the temp page accumulator
@@ -339,6 +386,8 @@ std::vector<std::string> paramlist interesting_params;
                     p += '\n';
                 }
             }
+            if (p.length() > 0) pages.push_back(make_pair(p, cur_page_name)); // add the last page to the temp page store
+
             // the pages std::vector should now have pairs of strings holding the page contents and VSP name for each page.
             // the pages we care about are VSPAERO_Comp_Load, but let's keep references to all pages for future usecases
             // VSPAERO_Comp_Load pages have predictable structure that we can parse
@@ -545,22 +594,23 @@ std::vector<std::string> paramlist interesting_params;
                                 vals.push_back(stod(x));
                             }
 
-                            page_values.push_back(make_pair(t, vals));
+                            page_values.push_back(make_pair(t, vals));   
                         }
-                        
                     }
 
                     // populate page contents into appropriate element objects
                     for (auto & el : elements)
                     {
+                        int w = 0;
+
                         for (auto & e : elem)
                         {
-                            int w = 0;
                             if (e == el.name)
                             {
                                 for (auto& v : page_values)
                                 {
                                     el.insert(v.first, deflection, mach, alpha, beta, v.second[w]);
+                                  //  printf("new value %s %f", v.first, v.second[w]);
                                 }
                             }
                             w++;
@@ -628,6 +678,8 @@ std::vector<std::string> paramlist interesting_params;
                 for (auto& x : e.ELbetas) { printf("%f\t", x); }
                 printf("\n");
 
+                e.printElement();
+
             }
             for (auto& x : airframe_polars)
             {
@@ -643,14 +695,14 @@ std::vector<std::string> paramlist interesting_params;
 
         for (auto& m : elements)
         {
-            if (!(m.name.compare(element))) {
+            if (m.name.compare(element) == 0) {
                 found_index = l;
                 break;
             }
             l++;
         }
 
-        if (found_index < 0) { printf("\n Not found in data! Be sure to use same element names as the OpenVSP output\n"); }
+        if (found_index < 0) { printf("\n %s Not found in data! Be sure to use same element names as the OpenVSP output\n", element.c_str()); }
         return elements.at(found_index);
     }
 

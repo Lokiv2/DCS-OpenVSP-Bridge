@@ -51,7 +51,7 @@
 */
 
 
-#define verbose true
+#define verbose false //WARNING, great for debugging, bad for performance
 #define silent false
 
 // which params do we care about loading
@@ -72,17 +72,21 @@
             std::vector<double> ELalphas;
             std::vector<double> ELbetas;
             
-            // element constructors and setters
+            // element constructors 
             FMElementData::FMElementData(std::string);                                                                       // basic constructor that just takes the element name
             FMElementData::FMElementData(std::string n, std::string p, double d, double m, double a, double b, double val);  // full constructor that initializes one param value
-            void insert(std::string param, double deflect, double mach, double alpha, double beta, double value);            // add a new param value to an element
 
             // element accessors
             double lookup(std::string param, double deflect, double mach, double alpha, double beta);                        // get one param value
+            void insert(std::string param, double deflect, double mach, double alpha, double beta, double value);            // add a new param value to an element
             std::vector<double> lookupParamVector(std::string param);                                                        // get the complete ordered list of values for a single param
+
+            void printElement();
 
         private:
             std::map<std::tuple<std::string, double, double, double, double>, double> data_frame;
+
+
         };
 
         std::vector<double> AFdeflects;     // list of known dimension values for the airframe
