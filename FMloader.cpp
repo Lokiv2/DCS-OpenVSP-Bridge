@@ -25,37 +25,56 @@ std::vector<std::string> paramlist interesting_params;
     // In that case we expect that the total observable forces and moments of the object are the sum of degen components.
     void FMDataLoader::FMElementData::insert(std::string param, double deflect, double mach, double alpha, double beta, double value) {
 
+        bool mode = false; // true if inserts to known values should be updates, false if inserts should overwrite prior values
         //printf("Starting new insert into %s\n", this->name);
         if (find(ELdeflects.begin(), ELdeflects.end(), deflect) == ELdeflects.end())  // if new deflection, add it to the unique list of elements
         {
             this->ELdeflects.push_back(deflect);
+            if (verbose) printf("\nNew deflection found! %s %f", this->name.c_str(), deflect);
+            std::sort(ELdeflects.begin(), ELdeflects.end());
+
         }
 
         if (find(ELmachs.begin(), ELmachs.end(), mach) == ELmachs.end())  // if new mach, add it to the unique list of machs
         {
             this->ELmachs.push_back(mach);
+            std::sort(ELmachs.begin(), ELmachs.end());
+
         }
 
         if (find(ELalphas.begin(), ELalphas.end(), alpha) == ELalphas.end())  // if new alpha, add it to the unique list of alphas
         {
             this->ELalphas.push_back(alpha);
+            std::sort(ELalphas.begin(), ELalphas.end());
+
         }
 
         if (find(ELbetas.begin(), ELbetas.end(), beta) == ELbetas.end())  // if new beta, add it to the unique list of betas
         {
             this->ELbetas.push_back(beta);
+            std::sort(ELbetas.begin(), ELbetas.end());
+
         }
+
 
         auto curKey = data_frame.find(make_tuple(param, deflect, mach, alpha, beta));
 
         if (curKey != data_frame.end())  // if this key already exists 
         {
-            if (verbose) printf("Updating value %f for param %s in element %s from %f\n", value, param.c_str(), this->name.c_str(), curKey->second);
-            curKey->second = curKey->second + value;
+            if (mode)
+            {
+          //      if (verbose) printf("Updating value %f for param %s in element %s from %f\n", value, param.c_str(), this->name.c_str(), curKey->second);
+                curKey->second = curKey->second + value;
+            }
+            else
+            {
+                data_frame[make_tuple(param, deflect, mach, alpha, beta)] =  value;
+            }
+
         }
         else {
             data_frame.insert(make_pair(make_tuple(param, deflect, mach, alpha, beta), value));
-            if (verbose) printf("Inserted value %f for param %s in element %s\n", value, param.c_str(), this->name.c_str());
+         //   if (verbose) printf("Inserted value %f for param %s in element %s\n", value, param.c_str(), this->name.c_str());
         }
     }
 
@@ -80,22 +99,20 @@ std::vector<std::string> paramlist interesting_params;
         std::vector<double> beta_proxy = getNearest(this->ELbetas, beta);
 
 
-        if (verbose) printf("\nLookup Element %s", this->name.c_str());
+        if (verbose) printf("\nLookup Element %s %s %f %f %f %f\n", this->name.c_str(), param.c_str(), deflect, mach, alpha, beta);
         try {
-            if (verbose) printf("a test %s %f %f %f %f\n", param.c_str(), def_proxy[0], mach_proxy[0], alph_proxy[0], beta_proxy[0]);
             a = this->data_frame.at(make_tuple(param, def_proxy[0], mach_proxy[0], alph_proxy[0], beta_proxy[0]));
-
-            if (verbose) printf("b test %s %f %f %f %f\n", param.c_str(), def_proxy[1], mach_proxy[1], alph_proxy[1], beta_proxy[1]);
             b = this->data_frame.at(make_tuple(param, def_proxy[1], mach_proxy[1], alph_proxy[1], beta_proxy[1]));
 
-            printf("%f, %f", a, b);
+            if (verbose) printf("a test %s %f %f %f %f\n", param.c_str(), def_proxy[0], mach_proxy[0], alph_proxy[0], beta_proxy[0]);
+            if (verbose) printf("b test %s %f %f %f %f\n", param.c_str(), def_proxy[1], mach_proxy[1], alph_proxy[1], beta_proxy[1]);
+
             if (a != b)
             {
                 if (def_proxy[0] != def_proxy[1]) d_bias = (def_proxy[0] - deflect) / (def_proxy[0] - def_proxy[1]);
-                if (def_proxy[0] != def_proxy[1]) m_bias = (mach_proxy[0] - mach) / (mach_proxy[0] - mach_proxy[1]);
-                if (def_proxy[0] != def_proxy[1]) a_bias = (alph_proxy[0] - alpha) / (alph_proxy[0] - alph_proxy[1]);
-                if (def_proxy[0] != def_proxy[1]) b_bias = (beta_proxy[0] - beta) / (beta_proxy[0] - beta_proxy[1]);
-
+                if (mach_proxy[0] != mach_proxy[1]) m_bias = (mach_proxy[0] - mach) / (mach_proxy[0] - mach_proxy[1]);
+                if (alph_proxy[0] != alph_proxy[1]) a_bias = (alph_proxy[0] - alpha) / (alph_proxy[0] - alph_proxy[1]);
+                if (beta_proxy[0] != beta_proxy[1]) b_bias = (beta_proxy[0] - beta) / (beta_proxy[0] - beta_proxy[1]);
 
                 result = a + (b * (d_bias + m_bias + a_bias + b_bias) / 4.0);
             }
@@ -106,6 +123,7 @@ std::vector<std::string> paramlist interesting_params;
             }
 
             if (verbose) printf("\nElement %s Result %s is %f + (%f * (%f + %f + %f + %f)/4.0) = %f\n", this->name.c_str(), param.c_str(), a, b, d_bias, m_bias, a_bias, b_bias, result);
+
         }
         catch (const std::out_of_range& oor) {
             result = 0.0;
@@ -148,10 +166,10 @@ std::vector<std::string> paramlist interesting_params;
 
     void FMDataLoader::FMElementData::printElement() {
 
-        printf("\nElement \t%s\n", this->name);
+        printf("\nElement \t%s\n", this->name.c_str());
         for (auto& p : data_frame)
         {
-            printf("%s\t", std::get<0>(p.first));
+            printf("%s\t", std::get<0>(p.first).c_str());
             printf("%f\t", std::get<1>(p.first));
             printf("%f\t", std::get<2>(p.first));
             printf("%f\t", std::get<3>(p.first));
@@ -206,22 +224,28 @@ std::vector<std::string> paramlist interesting_params;
         std::tuple<std::string, double, double, double, double> temp_key;
 
         std::string header, line;
-        double val;
         int num_lines = 0;
         int alpha_idx;
         int beta_idx;
         int mach_idx;
         int deflect_idx;
         int element_idx;
+        
         std::vector<std::string> param_names;
+
 
         bool is_elementwise = false;  // if we find element names lets get ready to record them properly
         std::vector<std::string> knownElems;
+
+
+
+
 
         std::ifstream myFile(filename.string());
 
         if (!myFile.is_open()) throw std::runtime_error("LancFM unable to load file parameter file");
         std::cout << "Processing.." << filename << std::endl;
+
 
 
         // Read the column names
@@ -230,6 +254,7 @@ std::vector<std::string> paramlist interesting_params;
             // Extract the first line in the file
             std::getline(myFile, header);
             std::stringstream ss(header);
+
 
             // Extract each param name
             std::string t;
@@ -242,7 +267,7 @@ std::vector<std::string> paramlist interesting_params;
                 if (t == "AoA" || t == "Alpha") alpha_idx = i;
                 else if (t == "Beta") beta_idx = i;
                 else if (t == "Mach") mach_idx = i;
-                else if (t == "Deflection" || t == "Deflect_deg") deflect_idx = i;
+                else if (t == "Deflection" || t == "Deflect_deg") deflect_idx = i;  //not a real thing yet, just planning
                 else if (t == "Element")
                 {
                     element_idx = i;
@@ -336,12 +361,8 @@ std::vector<std::string> paramlist interesting_params;
     {
         if(!silent) printf("Processing %s\n", filename.string().c_str());
 
-        AFdeflects.push_back(0.0);      // temp until we have a way to get this from data
-
-
-
         std::map<std::tuple< std::string, std::string, double, double, double, double>, double> result;
-        // <parameter, map<key=<deflection, mach, alpha, beta>, value=parameter value>>>
+                // <parameter, map<key=<deflection, mach, alpha, beta>, value=parameter value>>>
 
         std::vector<std::pair<std::string, std::string>> pages; // break the file up into parseable page strings and keep track of which page is what type of VSP output
         int num_lines = 0;
@@ -353,6 +374,40 @@ std::vector<std::string> paramlist interesting_params;
         // Read the column names
         if (myFile.good())
         {
+
+            // deflection (if present) is read from filename
+            // to set deflection filename should contain anywhere in its name the following (no quotes) "dElevator&-15.2&"
+            // this tells us that the Elevator element is deflected -15.2 degrees in that file
+            // 
+            // default is 0.0 deflection
+            //
+            // TODO multiple deflected elements per file?
+
+            double deflected_deg = 0.0;
+            std::string deflected_elem;
+
+            int startpos = filename.filename().string().find("d");
+            printf("\nDeflection found at %d", startpos);
+            if (startpos != std::string::npos)
+            {
+                std::string def_str = filename.filename().string().substr(startpos+1);
+                std::stringstream def(def_str);
+
+                std::string def_amt_str;
+                std::getline(def, deflected_elem, '&');
+                printf("\nDeflection elem %s", deflected_elem);
+
+                std::getline(def, def_amt_str, '&');
+                printf("\nDeflection amtt %s", deflected_deg);
+
+                deflected_deg = stod(def_amt_str);
+
+                if (verbose) printf("/nDeflection of %f for %s", deflected_deg, deflected_elem.c_str());
+            }
+
+
+
+
             // Extract first column in the file so we can paginate it
             std::string line;
 
@@ -517,6 +572,8 @@ std::vector<std::string> paramlist interesting_params;
                     std::vector<std::string> elem;  // remember the elements we've found in the results, this should be stable for any single VSP history file.
 
 
+
+
                     if (verbose) printf("Found a useful result page %s \n", page.first.c_str());
 
                     // process each line according to what it is
@@ -609,8 +666,14 @@ std::vector<std::string> paramlist interesting_params;
                             {
                                 for (auto& v : page_values)
                                 {
-                                    el.insert(v.first, deflection, mach, alpha, beta, v.second[w]);
-                                  //  printf("new value %s %f", v.first, v.second[w]);
+                                    if (e == deflected_elem)
+                                    {
+                                        el.insert(v.first, deflected_deg, mach, alpha, beta, v.second[w]);
+                                    }
+                                    else
+                                    {
+                                        el.insert(v.first, 0.0, mach, alpha, beta, v.second[w]);
+                                    }
                                 }
                             }
                             w++;
@@ -678,7 +741,7 @@ std::vector<std::string> paramlist interesting_params;
                 for (auto& x : e.ELbetas) { printf("%f\t", x); }
                 printf("\n");
 
-                e.printElement();
+                if (verbose) e.printElement();
 
             }
             for (auto& x : airframe_polars)
