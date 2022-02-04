@@ -71,11 +71,7 @@ OpenVSP result file parser
 
 	}
      Enjoy your parameters!
-    - if you want to be fancy you can grab the FMElementData objects and use their accessors within your aero element style code
 
 
 
-    MAIN TODOs:
-    - find a way to include control deflection as a parameter (maybe through clever file naming?)
-    - exception handling as new ways to break this are discovered
-    - maybe extend the airframe class to make the element class to make things cleaner
+
