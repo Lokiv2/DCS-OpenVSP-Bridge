@@ -4,249 +4,76 @@
 #include <sstream>
 #include <iostream>
 #include <fstream>
-//#include <utility> 
-//#include <algorithm>
+
 
 std::vector<std::string> paramlist interesting_params;
 
-    // basic constructor for a single element
-    FMDataLoader::FMElementData::FMElementData(std::string n) {
-        name = n;
-    }
-
-    // full element constructor with a single param value
-    FMDataLoader::FMElementData::FMElementData(std::string n, std::string p, double d, double m, double a, double b, double val) {
-        name = n;
-        insert(p, d, m, a, b, val);
-    }
-
-    // Insert 1 new param value into the element's data frame.  If the value already exists, add the new value to the existing.
-    // This supports the case where VSPAero breaks up elements into their degen component parts and names them all the same.
-    // In that case we expect that the total observable forces and moments of the object are the sum of degen components.
-    void FMDataLoader::FMElementData::insert(std::string param, double deflect, double mach, double alpha, double beta, double value) {
-
-        bool mode = false; // true if inserts to known values should be updates, false if inserts should overwrite prior values
-        //printf("Starting new insert into %s\n", this->name);
-        if (find(ELdeflects.begin(), ELdeflects.end(), deflect) == ELdeflects.end())  // if new deflection, add it to the unique list of elements
-        {
-            this->ELdeflects.push_back(deflect);
-            if (verbose) printf("\nNew deflection found! %s %f", this->name.c_str(), deflect);
-            std::sort(ELdeflects.begin(), ELdeflects.end());
-
-        }
-
-        if (find(ELmachs.begin(), ELmachs.end(), mach) == ELmachs.end())  // if new mach, add it to the unique list of machs
-        {
-            this->ELmachs.push_back(mach);
-            std::sort(ELmachs.begin(), ELmachs.end());
-
-        }
-
-        if (find(ELalphas.begin(), ELalphas.end(), alpha) == ELalphas.end())  // if new alpha, add it to the unique list of alphas
-        {
-            this->ELalphas.push_back(alpha);
-            std::sort(ELalphas.begin(), ELalphas.end());
-
-        }
-
-        if (find(ELbetas.begin(), ELbetas.end(), beta) == ELbetas.end())  // if new beta, add it to the unique list of betas
-        {
-            this->ELbetas.push_back(beta);
-            std::sort(ELbetas.begin(), ELbetas.end());
-
-        }
-
-
-        auto curKey = data_frame.find(make_tuple(param, deflect, mach, alpha, beta));
-
-        if (curKey != data_frame.end())  // if this key already exists 
-        {
-            if (mode)
-            {
-          //      if (verbose) printf("Updating value %f for param %s in element %s from %f\n", value, param.c_str(), this->name.c_str(), curKey->second);
-                curKey->second = curKey->second + value;
-            }
-            else
-            {
-                data_frame[make_tuple(param, deflect, mach, alpha, beta)] =  value;
-            }
-
-        }
-        else {
-            data_frame.insert(make_pair(make_tuple(param, deflect, mach, alpha, beta), value));
-         //   if (verbose) printf("Inserted value %f for param %s in element %s\n", value, param.c_str(), this->name.c_str());
-        }
-    }
-
-
-
-
-    double FMDataLoader::FMElementData::lookup(std::string param, double deflect, double mach, double alpha, double beta) {
-        // get a single parameter value at a given deflection, mach, alpha, beta
-        // par names are same as OpenVSP nomenclature (CL, Cmx, CDi, etc)
-
-        double result = 0.0;
-        double a, b;
-        double d_bias = 0.0;
-        double m_bias = 0.0;
-        double a_bias = 0.0;
-        double b_bias = 0.0;
-
-
-        std::vector<double> def_proxy = getNearest(this->ELdeflects, deflect);
-        std::vector<double> mach_proxy = getNearest(this->ELmachs, mach);
-        std::vector<double> alph_proxy = getNearest(this->ELalphas, alpha);
-        std::vector<double> beta_proxy = getNearest(this->ELbetas, beta);
-
-
-        if (verbose) printf("\nLookup Element %s %s %f %f %f %f\n", this->name.c_str(), param.c_str(), deflect, mach, alpha, beta);
-        try {
-            a = this->data_frame.at(make_tuple(param, def_proxy[0], mach_proxy[0], alph_proxy[0], beta_proxy[0]));
-            b = this->data_frame.at(make_tuple(param, def_proxy[1], mach_proxy[1], alph_proxy[1], beta_proxy[1]));
-
-            if (verbose) printf("a test %s %f %f %f %f\n", param.c_str(), def_proxy[0], mach_proxy[0], alph_proxy[0], beta_proxy[0]);
-            if (verbose) printf("b test %s %f %f %f %f\n", param.c_str(), def_proxy[1], mach_proxy[1], alph_proxy[1], beta_proxy[1]);
-
-            if (a != b)
-            {
-                if (def_proxy[0] != def_proxy[1]) d_bias = (def_proxy[0] - deflect) / (def_proxy[0] - def_proxy[1]);
-                if (mach_proxy[0] != mach_proxy[1]) m_bias = (mach_proxy[0] - mach) / (mach_proxy[0] - mach_proxy[1]);
-                if (alph_proxy[0] != alph_proxy[1]) a_bias = (alph_proxy[0] - alpha) / (alph_proxy[0] - alph_proxy[1]);
-                if (beta_proxy[0] != beta_proxy[1]) b_bias = (beta_proxy[0] - beta) / (beta_proxy[0] - beta_proxy[1]);
-
-                result = a + (b * (d_bias + m_bias + a_bias + b_bias) / 4.0);
-            }
-            else
-            {
-                result = a;
-                if (verbose) printf("\t out of mapped range");
-            }
-
-            if (verbose) printf("\nElement %s Result %s is %f + (%f * (%f + %f + %f + %f)/4.0) = %f\n", this->name.c_str(), param.c_str(), a, b, d_bias, m_bias, a_bias, b_bias, result);
-
-        }
-        catch (const std::out_of_range& oor) {
-            result = 0.0;
-            if (!silent) printf("Element %s value not found! %s %f %f %f %f\n", this->name.c_str(), param.c_str(), deflect, mach, alpha, beta);
-        }
-        return result;
-    }
-
-
-
-
-    std::vector<double> FMDataLoader::FMElementData::lookupParamVector(std::string param) {
-        // get a well ordered std::vector of known values for the given parameter in this element
-        // the default sort is betas then alphas then machs then deflections
-
-        std::vector<double> result;
-        std::tuple<std::string, double, double, double, double> key;
-
-        for (auto& d : ELdeflects)
-        {
-            for (auto& m : ELmachs)
-            {
-                for (auto& a : ELalphas)
-                {
-                    for (auto& b : ELbetas)
-                    {
-                        key = make_tuple(param, d, m, a, b);
-                        try {
-                            result.push_back(data_frame.at(key));
-                        }
-                        catch (const std::out_of_range& oor) {
-                            if (!silent) std::cout << "FM param not found for : " << name << "," << param << "," << d << "," << m << "," << a << "," << b << std::endl;
-                        }
-                    }
-                }
-            }
-        }
-        return result;
-    }
-
-    void FMDataLoader::FMElementData::printElement() {
-
-        printf("\nElement \t%s\n", this->name.c_str());
-        for (auto& p : data_frame)
-        {
-            printf("%s\t", std::get<0>(p.first).c_str());
-            printf("%f\t", std::get<1>(p.first));
-            printf("%f\t", std::get<2>(p.first));
-            printf("%f\t", std::get<3>(p.first));
-            printf("%f\t", std::get<4>(p.first));
-            printf("%f\n", p.second);
-        }
-    }
-
-
+// null constructor
     FMDataLoader::FMDataLoader() {
     }
 
-
-    std::vector<std::string> FMDataLoader::ListElementNames()
-    {
-        std::vector<std::string> elist;
-        for (auto& e : elements)
-        {
-            elist.push_back(e.name);
-        }
-        return elist;
-    }
-
-
-    FMDataLoader::FMDataLoader(std::filesystem::path p) {
+// main container constructor
+    FMDataLoader::FMDataLoader(std::filesystem::path p, bool elementwise) {
         // scans the /config/ directory for csv files, assumed to be OpenVSP history files, and constructs an accessible data structure from them.
 
         if (p == "")
         {
-             if (!silent) printf("No user path");
+            if (!silent) printf("No user path");
         }
 
         if (!silent) printf("\nInitializing FM from %s\n", p.c_str());
 
         for (const auto& entry : std::filesystem::directory_iterator(p))
         {
-            if (entry.path().extension().compare(".csv") == 0)
+            if (entry.path().extension().compare(".csv") == 0 && elementwise)
             {
                 foundfilelist.push_back(entry.path().stem());
                 FMDataLoader::loadVSPcsv(entry.path());
+            }
+
+            else if (entry.path().extension().compare(".polar") == 0 && !elementwise)
+            {
+                foundfilelist.push_back(entry.path().stem());
+                FMDataLoader::loadcsv(entry.path());
             }
         }
     }
 
 
-    // mechanics of opening and reading a CSV into usable std::vectors
-    // parts adapted from https ://www.gormanalysis.com/blog/reading-and-writing-csv-files-with-cpp/ 
-    void FMDataLoader::loadcsv(std::filesystem::path filename)
-    {
+// basic empty constructor for a single element
+    FMDataLoader::FMElementData::FMElementData(std::string n) {
+        name = n;
+    }
 
-        std::vector<std::pair<std::tuple<std::string, double, double, double, double>, double>> results;
-        std::tuple<std::string, double, double, double, double> temp_key;
+// full element constructor with a single param value
+    FMDataLoader::FMElementData::FMElementData(std::string n, std::string p, double d, double m, double a, double b, double val) {
+        name = n;
+        insert(p, d, m, a, b, val);
+    }
+
+
+
+// Loaders
+
+    void                FMDataLoader::loadcsv(std::filesystem::path filename)
+    {
+        // Loader of arbitrary csv (VSPAero .polar or hand-made data table
+        // assumes VSP naming for parameters
+        std::vector<std::pair<std::tuple<std::string, double, double, double>, double>> results;
+        std::tuple<std::string, double, double, double> temp_key;
 
         std::string header, line;
         int num_lines = 0;
-        int alpha_idx;
-        int beta_idx;
-        int mach_idx;
-        int deflect_idx;
-        int element_idx;
-        
+        int alpha_idx = 0;
+        int beta_idx = 0;
+        int mach_idx = 0;
+
         std::vector<std::string> param_names;
-
-
-        bool is_elementwise = false;  // if we find element names lets get ready to record them properly
-        std::vector<std::string> knownElems;
-
-
-
-
 
         std::ifstream myFile(filename.string());
 
         if (!myFile.is_open()) throw std::runtime_error("LancFM unable to load file parameter file");
         std::cout << "Processing.." << filename << std::endl;
-
-
 
         // Read the column names
         if (myFile.good())
@@ -259,36 +86,40 @@ std::vector<std::string> paramlist interesting_params;
             // Extract each param name
             std::string t;
             int i = 0;
+            int columns = 0;
             while (std::getline(ss, t, ','))
             {
                 param_names.push_back(t);
 
                 // remember which column special flight condition params are in so we can key on this for insert into data frame
-                if (t == "AoA" || t == "Alpha") alpha_idx = i;
-                else if (t == "Beta") beta_idx = i;
-                else if (t == "Mach") mach_idx = i;
-                else if (t == "Deflection" || t == "Deflect_deg") deflect_idx = i;  //not a real thing yet, just planning
-                else if (t == "Element")
+                if (t == "AoA" || t == "Alpha") {
+                    alpha_idx = i;
+                    printf("Alpha in col %d", i);
+                }
+                else if (t == "Beta") 
                 {
-                    element_idx = i;
-                    is_elementwise = true;
-                    knownElems = ListElementNames();
+                    beta_idx = i;
+                    printf("Beta in col %d", i);
+                }
+                else if (t == "Mach")
+                {
+                    mach_idx = i;
+                    printf("Mach in col %d", i);
                 }
                 i++;
-                //      std::cout << colname << std::endl;
             }
 
-            // Read data, line by line
+            columns = i;
+
+            // Read data, line by line.
+            // sometimes VSP .polar does silly stuff and print columns of data without heading, so load only data with headings
+
             while (std::getline(myFile, line))
-            {
-                std::string row_element;
-                double row_deflect;
-                double row_mach;
-                double row_alpha;
-                double row_beta;
-                bool dim_polar_complete = false; // do we have all flight condition keys?
-                bool dim_element_complete = false;  // do we know the element (is there one?)
-                // Create a std::stringstream of the current line
+            {       
+                double row_mach = 0;
+                double row_alpha = 0;
+                double row_beta = 0;
+
                 std::stringstream ss(line);
 
                 // Keep track of the current column index
@@ -301,64 +132,34 @@ std::vector<std::string> paramlist interesting_params;
                     if (colIdx == alpha_idx) row_alpha = stod(t);
                     else if (colIdx == beta_idx) row_beta = stod(t);
                     else if (colIdx == mach_idx) row_mach = stod(t);
-                    else if (colIdx == deflect_idx) row_deflect = stod(t);
-                    else if (colIdx == element_idx) row_element = t;
-                    else
+                    else if (colIdx < columns)
                     {
                         val_cache.push_back(std::make_pair(colIdx, stod(t)));
                     }   // store values in vector
                     colIdx++;
                 }
 
-                if (dim_polar_complete && dim_element_complete && is_elementwise)  // if we have all necessary keys for insert into elements ( we can't do this inline in case some params preceed alpha,beta or mach in the column order
+                for (auto& pair : val_cache)
                 {
-                    for (auto& pair : val_cache)
-                    {
-                        if (std::find(knownElems.begin(), knownElems.end(), row_element) == knownElems.end())
-                        {
-                            // if this is a previously unknown element
-                            elements.push_back(FMElementData(row_element, param_names[pair.first], row_deflect, row_mach, row_alpha, row_beta, pair.second));
-                            knownElems.push_back(row_element);
-                        }
-                        else
-                        {
-                            int elIdx = 0;
-                            for (auto& m : elements)
-                            {
-                                if (!(m.name.compare(row_element)))
-                                {
-                                    break;
-                                }
-                                elIdx++;
-                            }
-                            // if this is a known element
-                            elements[elIdx].insert(param_names[pair.first], row_deflect, row_mach, row_alpha, row_beta, pair.second); //TODO what if this already exists?
-                        }
-                    }
+                    insertPolar(param_names[pair.first], row_mach, row_alpha, row_beta, pair.second);
                 }
-                else if (dim_polar_complete)
-                {
-                    for (auto& pair : val_cache)
-                    {
-                        insertPolar(param_names[pair.first], row_deflect, row_mach, row_alpha, row_beta, pair.second);
-                    }
-                }
-                if (!silent) std::cout << "Loaded " << num_lines << "lines" << std::endl;
-                // Close file
-                myFile.close();
-                std::cout << "FM Loading Complete!";
 
+                num_lines++;
             }
+
+            if (!silent) printf("Loaded %d lines", num_lines);
+            if(verbose) FMDataLoader::printPolars();
+            myFile.close();
+            if (!silent) printf("\nFM Loading Complete!");
         }
     }
 
-
-
-
-
-    // load data directly from OpenVSP history.csv
-    void FMDataLoader::loadVSPcsv(std::filesystem::path filename)
+    void                FMDataLoader::loadVSPcsv(std::filesystem::path filename)
     {
+        // load data directly from OpenVSP history.csv
+        // sets up elements and polars if found
+        // recent versions of VSP appear to write the airframe polars as a separate .polar file, so use FMDataLoader::loadcsv
+
         if(!silent) printf("Processing %s\n", filename.string().c_str());
 
         std::map<std::tuple< std::string, std::string, double, double, double, double>, double> result;
@@ -386,6 +187,7 @@ std::vector<std::string> paramlist interesting_params;
             double deflected_deg = 0.0;
             std::string deflected_elem;
 
+            // see if the filename identifies a deflected element
             int startpos = filename.filename().string().find("d");
             printf("\nDeflection found at %d", startpos);
             if (startpos != std::string::npos)
@@ -395,10 +197,10 @@ std::vector<std::string> paramlist interesting_params;
 
                 std::string def_amt_str;
                 std::getline(def, deflected_elem, '&');
-                printf("\nDeflection elem %s", deflected_elem);
+                printf("\nDeflection elem %s", deflected_elem.c_str());
 
                 std::getline(def, def_amt_str, '&');
-                printf("\nDeflection amtt %s", deflected_deg);
+                printf("\nDeflection amt %f", deflected_deg);
 
                 deflected_deg = stod(def_amt_str);
 
@@ -470,12 +272,11 @@ std::vector<std::string> paramlist interesting_params;
 
             for (const auto& page : pages)      // step through our std::vector of pages and process them into data
             {
-                double deflection = 0.0; // TODO read this in somehow, its not obvious in the results
                 double alpha;
                 double beta;
                 double mach;
 
-                std::vector<double> deflects = { 0.0 };
+                std::vector<double> deflects = { deflected_deg };
                 std::vector<double> alphas;
                 std::vector<double> betas;
                 std::vector<double> machs;
@@ -557,12 +358,14 @@ std::vector<std::string> paramlist interesting_params;
                         int col_indx = 0;
                         for (auto& val : std::get<1>(param))
                         {
-                            insertPolar(std::get<0>(param), deflection, machs[col_indx], alphas[col_indx], betas[col_indx], val);
+                            insertPolar(std::get<0>(param), machs[col_indx], alphas[col_indx], betas[col_indx], val);
                             col_indx++;
                         }
                     }
                 }
 
+
+                //&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&
                 // element-wise parameter loading..
            
                 if (page.second.compare("VSPAERO_Comp_Load")==0)
@@ -591,30 +394,21 @@ std::vector<std::string> paramlist interesting_params;
                             std::string x;
                             getline(linestream, x, ','); // record alpha for this page (its the same for all columns in page)
                             alpha = stod(x);
-                            //if (std::find(alphas.begin(), alphas.end(), alpha) == alphas.end())
-                            //{
-                            //    alphas.push_back(alpha);
-                            //}
+
                         }
                         else if (t.compare("Beta") == 0)
                         {
                             std::string x;
                             getline(linestream, x, ','); // record beta for this page (its the same for all columns in page)
                             beta = stod(x);
-                            //if (std::find(betas.begin(), betas.end(), beta) == betas.end())
-                            //{
-                            //    betas.push_back(beta);
-                            //}
+
                         }
                         else if (t.compare("Mach") == 0)
                         {
                             std::string x;
                             getline(linestream, x, ','); // record mach for this page (its the same for all columns in page)
                             mach = stod(x);
-                            //if (std::find(machs.begin(), machs.end(), mach) == machs.end())
-                            //{
-                            //    machs.push_back(mach);
-                            //}
+
                         }
                         else if (t.compare("Comp_Name") == 0)
                         {
@@ -662,7 +456,7 @@ std::vector<std::string> paramlist interesting_params;
 
                         for (auto & e : elem)
                         {
-                            if (e == el.name)
+                            if (e == el.name && e != "NONE")
                             {
                                 for (auto& v : page_values)
                                 {
@@ -683,35 +477,9 @@ std::vector<std::string> paramlist interesting_params;
             }
         }
 
-        //int elem_iter = 0;
-        //std::vector<FMElementData>::iterator curEl = elements.begin();
-        //while (getline(linestream, x, ','))
-        //{
-        //    printf("%s\t", x.c_str());
 
-        //    while (curEl != elements.end())  // locate the FMElementData object with this name
-        //    {
-        //        if (curEl->name.compare(elem[elem_iter]) == 0)
-        //        {
-        //            printf("Found element%s\n", curEl->name);
-        //            break;
-        //        }
-        //        curEl = std::next(curEl, 1);
-        //    }
-
-        //    try
-        //    {
-        //        curEl->insert(t, deflection, mach, alpha, beta, stod(x));
-        //        if (verbose) printf("Value %f pushed \n", stod(x));
-        //        elem_iter++;
-        //    }
-        //    catch (const std::out_of_range& oor) {
-        //        if (!silent) printf("Element not found for %d %f\n", elem_iter, stod(x));
-        //    }
-        //}
 
         myFile.close();
-        std::sort(AFdeflects.begin(), AFdeflects.end());
         std::sort(AFmachs.begin(), AFmachs.end());
         std::sort(AFalphas.begin(), AFalphas.end());
         std::sort(AFbetas.begin(), AFbetas.end());
@@ -719,9 +487,7 @@ std::vector<std::string> paramlist interesting_params;
         if (!silent)
         {
             printf("FM Loading Complete!\n");
-            printf("\nDeflections: \n");
-            for (auto& x : AFdeflects) { printf("%f\t", x); }
-             printf("\nMachs: \n");
+            printf("\nMachs: \n");
             for (auto& x : AFmachs) { printf("%f\t", x); }
             printf("\nAlphas: \n");
             for (auto& x : AFalphas) { printf("%f\t", x); }
@@ -732,6 +498,7 @@ std::vector<std::string> paramlist interesting_params;
             for (auto& e : elements)
             {
                 printf("\n Element: %s\n", e.name.c_str());
+                printf("\nDeflections: \n");
                 for (auto& x : e.ELdeflects) { printf("%f\t", x); }
                 printf("\nMachs: \n");
                 for (auto& x : e.ELmachs) { printf("%f\t", x); }
@@ -744,12 +511,15 @@ std::vector<std::string> paramlist interesting_params;
                 if (verbose) e.printElement();
 
             }
-            for (auto& x : airframe_polars)
+            if(verbose) for (auto& x : airframe_polars)
             {
-                printf("%s, %f, %f, %f, %f = \t%f\n", std::get<0>(x.first).c_str(), std::get<1>(x.first), std::get<2>(x.first), std::get<3>(x.first), std::get<4>(x.first), x.second);
+                printf("%s, %f, %f, %f, %f = \t%f\n", std::get<0>(x.first).c_str(), std::get<1>(x.first), std::get<2>(x.first), std::get<3>(x.first), x.second);
             }
         }
     }
+
+
+// Utility functions, accessors, etc.
 
     FMDataLoader::FMElementData& FMDataLoader::getCompleteElement(std::string element)
     {
@@ -768,7 +538,6 @@ std::vector<std::string> paramlist interesting_params;
         if (found_index < 0) { printf("\n %s Not found in data! Be sure to use same element names as the OpenVSP output\n", element.c_str()); }
         return elements.at(found_index);
     }
-
 
     std::vector<double> FMDataLoader::getFMParamVector(std::string element, std::string param) // get list of given parameter (Cl, Cd, etc) values for "element from CSV data
     {
@@ -793,8 +562,7 @@ std::vector<std::string> paramlist interesting_params;
         return resvec;
     }
 
-
-    double FMDataLoader::getFMParam(std::string element, std::string param, double deflect, double mach, double alpha, double beta) // get list of given parameter (Cl, Cd, etc) values for "element from CSV data
+    double              FMDataLoader::getFMParam(std::string element, std::string param, double deflect, double mach, double alpha, double beta) // get list of given parameter (Cl, Cd, etc) values for "element from CSV data
     {
         // We want to get back a Cl, Cd (CMy, etc) std::vector for each AeroElement (identified in the csv file)
         // The std::vector should be sorted first by deflection, then by mach, then by alpha, then (finally) by beta
@@ -814,73 +582,65 @@ std::vector<std::string> paramlist interesting_params;
         return result;
     }
 
-
-    void FMDataLoader::insertPolar(std::string param, double deflect, double mach, double alpha, double beta, double value) 
+    void                FMDataLoader::insertPolar(std::string param, double mach, double alpha, double beta, double value) 
     {
-  //      printf("\nTrying to insert %s, %f, %f, %f, %f, %f\n", param, deflect, mach, alpha, beta, value);
-        
+       
         try
         {
-            if (!std::get<1>(airframe_polars.insert({ make_tuple(param, deflect, mach, alpha, beta), value })))
+            if (!std::get<1>(airframe_polars.insert({ make_tuple(param,  mach, alpha, beta), value })))
             {
-                airframe_polars[make_tuple(param, deflect, mach, alpha, beta)] = value;
+                airframe_polars[make_tuple(param, mach, alpha, beta)] = value;
                 if (verbose) printf("value was already present, overwritten\n");
             }
-            if(verbose) printf("\nInserted new value %f for param %s in airframe polars\n", value, param.c_str());
+            printf("\nInserted new value %f for param %s in airframe polars\n", value, param.c_str());
         }
         catch (const std::exception& e) { 
             if (!silent) printf("%s",e.what());
         }
         // update the list of known dimensions
-        if (std::find(AFdeflects.begin(), AFdeflects.end(), deflect) == AFdeflects.end()) { AFdeflects.push_back(deflect); std::sort(AFdeflects.begin(), AFdeflects.end()); }
         if (std::find(AFmachs.begin(), AFmachs.end(), mach) == AFmachs.end()) {         AFmachs.push_back(mach);        std::sort(AFmachs.begin(), AFmachs.end()); }
         if (std::find(AFalphas.begin(), AFalphas.end(), alpha) == AFalphas.end()) {     AFalphas.push_back(alpha);      std::sort(AFalphas.begin(), AFalphas.end()); }
         if (std::find(AFbetas.begin(), AFbetas.end(), beta) == AFbetas.end()) {         AFbetas.push_back(beta);        std::sort(AFbetas.begin(), AFbetas.end()); }
 
     }
 
-    double FMDataLoader::getPolar(std::string param, double deflect, double mach, double alpha, double beta)
+    double              FMDataLoader::getPolar(std::string param, double mach, double alpha, double beta)
     {
-        std::vector<double> def_proxy = getNearest(AFdeflects, deflect);
         std::vector<double> mach_proxy = getNearest(AFmachs, mach);
         std::vector<double> alph_proxy = getNearest(AFalphas, alpha);
         std::vector<double> beta_proxy = getNearest(AFbetas, beta);
 
         double a, b;
         double result = 0.0;
-        double d_bias = 0.0;
         double m_bias = 0.0;
         double a_bias = 0.0;
         double b_bias = 0.0;
 
         try {
-            if (verbose) printf("a test %s %f %f %f %f\n", param.c_str(), def_proxy[0], mach_proxy[0], alph_proxy[0], beta_proxy[0]);
-            a = airframe_polars.at(make_tuple(param, def_proxy[0], mach_proxy[0], alph_proxy[0], beta_proxy[0]));
+            if (verbose) printf("a test %s %f %f %f %f\n", param.c_str(),  mach_proxy[0], alph_proxy[0], beta_proxy[0]);
+            a = airframe_polars.at(make_tuple(param, mach_proxy[0], alph_proxy[0], beta_proxy[0]));
 
-            if (verbose) printf("b test %s %f %f %f %f\n", param.c_str(), def_proxy[1], mach_proxy[1], alph_proxy[1], beta_proxy[1]);
-            b = airframe_polars.at(make_tuple(param, def_proxy[1], mach_proxy[1], alph_proxy[1], beta_proxy[1]));
+            if (verbose) printf("b test %s %f %f %f %f\n", param.c_str(), mach_proxy[1], alph_proxy[1], beta_proxy[1]);
+            b = airframe_polars.at(make_tuple(param, mach_proxy[1], alph_proxy[1], beta_proxy[1]));
 
             if (a != b)
             {
-                if (def_proxy[0] != def_proxy[1]) d_bias = (def_proxy[0] - deflect) / (def_proxy[0] - def_proxy[1]);
-                if (def_proxy[0] != def_proxy[1]) m_bias = (mach_proxy[0] - deflect) / (mach_proxy[0] - mach_proxy[1]);
-                if (def_proxy[0] != def_proxy[1]) a_bias = (alph_proxy[0] - deflect) / (alph_proxy[0] - alph_proxy[1]);
-                if (def_proxy[0] != def_proxy[1]) b_bias = (beta_proxy[0] - deflect) / (beta_proxy[0] - beta_proxy[1]);
+                if (mach_proxy[0] != mach_proxy[1]) m_bias = (mach_proxy[0] - mach) / (mach_proxy[0] - mach_proxy[1]);
+                if (alph_proxy[0] != alph_proxy[1]) a_bias = (alph_proxy[0] - alpha) / (alph_proxy[0] - alph_proxy[1]);
+                if (beta_proxy[0] != beta_proxy[1]) b_bias = (beta_proxy[0] - beta) / (beta_proxy[0] - beta_proxy[1]);
 
-
-                result = a + (b * (d_bias + m_bias + a_bias + b_bias) / 4.0);
+                result = a + (b * (m_bias + a_bias + b_bias) / 4.0);
             }
             else
                 result = a;
 
-            if (verbose) printf("\nResult %s is %f + (%f * (%f + %f + %f + %f)/4.0) = %f\n", param.c_str(), a, b, d_bias, m_bias, a_bias, b_bias, result);
+            if (verbose) printf("\nResult %s is %f + (%f * (%f + %f + %f)/4.0) = %f\n", param.c_str(), a, b, m_bias, a_bias, b_bias, result);
         }
         catch (const std::out_of_range& oor) {
-            if (!silent) printf("Polar value not found! %s %f %f %f %f\n", param.c_str(), deflect, mach, alpha, beta);
+            if (!silent) printf("Polar value not found! %s %f %f %f %f\n", param.c_str(), mach, alpha, beta);
         }
         return result;
     }
-
 
     std::vector<double> FMDataLoader::getNearest(std::vector<double>& dim, double key)
     {
@@ -901,13 +661,214 @@ std::vector<std::string> paramlist interesting_params;
         auto lower = std::lower_bound(dim.begin(), dim.end(), key);
         auto upper = std::upper_bound(dim.begin(), dim.end(), key);
 
-
+        // boundary protection
         if (lower != dim.begin()) lower = std::prev(lower);
         if (upper == dim.end()) upper = std::prev(upper);
+        // if we hit our value exactly (happens often with deflection)
+        if (*lower == key) upper = lower;
+        if (*upper == key) lower = upper;
+
         result.push_back(*lower);
         result.push_back(*upper);
 
         if(verbose) printf("Got nearest %f %f\n", result[0], result[1]);
         return result;
     }
+
+    std::vector<std::string> FMDataLoader::ListElementNames()
+    {
+        std::vector<std::string> elist;
+        for (auto& e : elements)
+        {
+            elist.push_back(e.name);
+        }
+        return elist;
+    }
+
     
+// element functions
+
+    void                FMDataLoader::FMElementData::insert(std::string param, double deflect, double mach, double alpha, double beta, double value) {
+
+        // Insert 1 new param value into the element's data frame.  If the value already exists, add the new value to the existing.
+        // This supports the case where VSPAero breaks up elements into their degen component parts and names them all the same.
+        // In that case we expect that the total observable forces and moments of the object are the sum of degen components.
+
+
+        bool mode = false; // true if inserts to known values should be updates, false if inserts should overwrite prior values
+        //printf("Starting new insert into %s\n", this->name);
+        if (find(ELdeflects.begin(), ELdeflects.end(), deflect) == ELdeflects.end())  // if new deflection, add it to the unique list of elements
+        {
+            this->ELdeflects.push_back(deflect);
+            std::sort(ELdeflects.begin(), ELdeflects.end());
+
+        }
+
+        if (find(ELmachs.begin(), ELmachs.end(), mach) == ELmachs.end())  // if new mach, add it to the unique list of machs
+        {
+            this->ELmachs.push_back(mach);
+            std::sort(ELmachs.begin(), ELmachs.end());
+
+        }
+
+        if (find(ELalphas.begin(), ELalphas.end(), alpha) == ELalphas.end())  // if new alpha, add it to the unique list of alphas
+        {
+            this->ELalphas.push_back(alpha);
+            std::sort(ELalphas.begin(), ELalphas.end());
+
+        }
+
+        if (find(ELbetas.begin(), ELbetas.end(), beta) == ELbetas.end())  // if new beta, add it to the unique list of betas
+        {
+            this->ELbetas.push_back(beta);
+            std::sort(ELbetas.begin(), ELbetas.end());
+
+        }
+
+
+        auto curKey = data_frame.find(make_tuple(param, deflect, mach, alpha, beta));
+
+        if (curKey != data_frame.end())  // if this key already exists 
+        {
+            if (mode)
+            {
+                //      if (verbose) printf("Updating value %f for param %s in element %s from %f\n", value, param.c_str(), this->name.c_str(), curKey->second);
+                curKey->second = curKey->second + value;
+            }
+            else
+            {
+                data_frame[make_tuple(param, deflect, mach, alpha, beta)] = value;
+            }
+
+        }
+        else {
+            data_frame[make_tuple(param, deflect, mach, alpha, beta)] = value;
+            //   if (verbose) printf("Inserted value %f for param %s in element %s\n", value, param.c_str(), this->name.c_str());
+        }
+    }
+
+    double              FMDataLoader::FMElementData::lookup(std::string param, double deflect, double mach, double alpha, double beta) {
+        // get a single parameter value at a given deflection, mach, alpha, beta
+        // par names are same as OpenVSP nomenclature (CL, Cmx, CDi, etc)
+
+        double result = 0.0;
+        double a, b;
+        double d_bias = 0.0;
+        double m_bias = 0.0;
+        double a_bias = 0.0;
+        double b_bias = 0.0;
+
+
+        std::vector<double> def_proxy = getNearest(this->ELdeflects, deflect);
+        std::vector<double> mach_proxy = getNearest(this->ELmachs, mach);
+        std::vector<double> alph_proxy = getNearest(this->ELalphas, alpha);
+        std::vector<double> beta_proxy = getNearest(this->ELbetas, beta);
+
+        if (verbose) printf("\nLookup Element %s %s %f %f %f %f\n", this->name.c_str(), param.c_str(), deflect, mach, alpha, beta);
+        try {
+            a = data_frame.at(std::make_tuple(param, def_proxy[0], mach_proxy[0], alph_proxy[0], beta_proxy[0]));
+            a = data_frame.at(std::make_tuple("CL", 0.0, 0.6, 0.0, 0.0));
+
+        }
+        catch (const std::out_of_range& oor) {
+            printf("a test failed %s %f %f %f %f\n", param.c_str(), def_proxy[0], mach_proxy[0], alph_proxy[0], beta_proxy[0]);
+            printf(oor.what());
+            a = 0.0;
+        }
+        try {
+            b = data_frame.at(make_tuple(param, def_proxy[1], mach_proxy[1], alph_proxy[1], beta_proxy[1]));
+        }
+        catch (const std::out_of_range& oor) {
+            printf("b test failed %s %f %f %f %f\n", param.c_str(), def_proxy[0], mach_proxy[0], alph_proxy[0], beta_proxy[0]);
+            printf(oor.what());
+            b = 0.0;
+        }
+
+        if (verbose) printf("a test %s %f %f %f %f\n", param.c_str(), def_proxy[0], mach_proxy[0], alph_proxy[0], beta_proxy[0]);
+        if (verbose) printf("b test %s %f %f %f %f\n", param.c_str(), def_proxy[1], mach_proxy[1], alph_proxy[1], beta_proxy[1]);
+
+        if (a != b)
+        {
+            if (def_proxy[0] != def_proxy[1]) d_bias = (def_proxy[0] - deflect) / (def_proxy[0] - def_proxy[1]);
+            if (mach_proxy[0] != mach_proxy[1]) m_bias = (mach_proxy[0] - mach) / (mach_proxy[0] - mach_proxy[1]);
+            if (alph_proxy[0] != alph_proxy[1]) a_bias = (alph_proxy[0] - alpha) / (alph_proxy[0] - alph_proxy[1]);
+            if (beta_proxy[0] != beta_proxy[1]) b_bias = (beta_proxy[0] - beta) / (beta_proxy[0] - beta_proxy[1]);
+
+            result = a + (b * (d_bias + m_bias + a_bias + b_bias) / 4.0);
+        }
+        else
+        {
+            result = a;
+            if (verbose) printf("\nOut of mapped range");
+        }
+
+        if (verbose) printf("\nElement %s Result %s is %f + (%f * (%f + %f + %f + %f)/4.0) = %f\n", this->name.c_str(), param.c_str(), a, b, d_bias, m_bias, a_bias, b_bias, result);
+
+
+        /* catch (const std::out_of_range& oor) {
+             result = 0.0;
+             printf(oor.what());
+             if (!silent)
+             {
+                 printf("\n%s %s value not found! %f %f %f %f\n", this->name.c_str(), param.c_str(), deflect, mach, alpha, beta);
+                 printf("a test %s %f %f %f %f\n", param.c_str(), def_proxy[0], mach_proxy[0], alph_proxy[0], beta_proxy[0]);
+                 printf("b test %s %f %f %f %f\n", param.c_str(), def_proxy[1], mach_proxy[1], alph_proxy[1], beta_proxy[1]);
+             }
+         }*/
+        return result;
+    }
+
+    std::vector<double> FMDataLoader::FMElementData::lookupParamVector(std::string param) {
+        // get a well ordered std::vector of known values for the given parameter in this element
+        // the default sort is betas then alphas then machs then deflections
+
+        std::vector<double> result;
+        std::tuple<std::string, double, double, double, double> key;
+
+        for (auto& d : ELdeflects)
+        {
+            for (auto& m : ELmachs)
+            {
+                for (auto& a : ELalphas)
+                {
+                    for (auto& b : ELbetas)
+                    {
+                        key = make_tuple(param, d, m, a, b);
+                        try {
+                            result.push_back(data_frame.at(key));
+                        }
+                        catch (const std::out_of_range& oor) {
+                            if (!silent) std::cout << "FM param not found for : " << name << "," << param << "," << d << "," << m << "," << a << "," << b << std::endl;
+                        }
+                    }
+                }
+            }
+        }
+        return result;
+    }
+
+    void                FMDataLoader::FMElementData::printElement() {
+
+        printf("\nElement \t%s\n", this->name.c_str());
+        for (auto& p : data_frame)
+        {
+            printf("%s\t", std::get<0>(p.first).c_str());
+            printf("%f\t", std::get<1>(p.first));
+            printf("%f\t", std::get<2>(p.first));
+            printf("%f\t", std::get<3>(p.first));
+            printf("%f\t", std::get<4>(p.first));
+            printf("%f\n", p.second);
+        }
+    }
+
+    void                FMDataLoader::printPolars() {
+
+        for (auto& p : airframe_polars)
+        {
+            printf("%s\t", std::get<0>(p.first).c_str());
+            printf("%f\t", std::get<1>(p.first));
+            printf("%f\t", std::get<2>(p.first));
+            printf("%f\t", std::get<3>(p.first));
+            printf("%f\n", p.second);
+        }
+    }

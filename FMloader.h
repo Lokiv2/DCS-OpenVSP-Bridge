@@ -89,24 +89,24 @@
 
         };
 
-        std::vector<double> AFdeflects;     // list of known dimension values for the airframe
         std::vector<double> AFmachs;
         std::vector<double> AFalphas;
         std::vector<double> AFbetas;
 
         // airframe total polars constructors and setters
         FMDataLoader::FMDataLoader();                                                                                         // basic default constructor
-        FMDataLoader::FMDataLoader(std::filesystem::path p);                                                                  // constructor which collects all properly located and structured files and sets up the class's internal data frame, airframe_polars
-        void insertPolar(std::string param, double deflect, double mach, double alpha, double beta, double value);            // add a new polar value at given defletion/mach/alpha/beta
+        FMDataLoader::FMDataLoader(std::filesystem::path p, bool elementwise);                                                                  // constructor which collects all properly located and structured files and sets up the class's internal data frame, airframe_polars
+        void insertPolar(std::string param, double mach, double alpha, double beta, double value);            // add a new polar value at given defletion/mach/alpha/beta
 
         // convenient accessors for polars and individual values 
         double  FMDataLoader::getFMParam(std::string element, std::string param, double deflect, double mach, double alpha, double beta); // get a single parameter value for an element designated by name (as opposed to object reference)
-        double FMDataLoader::getPolar(std::string param, double deflect, double mach, double alpha, double beta);             // get individual polar value
+        double FMDataLoader::getPolar(std::string param, double mach, double alpha, double beta);             // get individual polar value
 
         // entire class instance exporters and util functions
         FMElementData& getCompleteElement(std::string element);                                                               // get one entire element object
         std::vector<double>  FMDataLoader::getFMParamVector(std::string element, std::string param);                          // get aero coeffiecient as flat std::vector of choice for given element from loaded CSV data
         std::vector<std::string> FMDataLoader::ListElementNames();
+        void FMDataLoader::printPolars();
 
 
 
@@ -115,7 +115,7 @@
 
         std::vector<std::filesystem::path> foundfilelist; // list of processed files
         std::vector<FMElementData> elements;              // list of known elements
-        std::map<std::tuple<std::string, double, double, double, double>, double> airframe_polars;  // main store of polars
+        std::map<std::tuple<std::string, double, double, double>, double> airframe_polars;  // main store of polars
 
         void FMDataLoader::loadVSPcsv(std::filesystem::path);  // utility function to load flight data straight from OpenVSP history.csv during construction
         void FMDataLoader::loadcsv(std::filesystem::path);  // utility function to load flight data straight from OpenVSP history.csv during construction
