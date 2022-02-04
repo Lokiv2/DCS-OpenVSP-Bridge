@@ -13,6 +13,8 @@ OpenVSP result file parser
     CRASH COURSE:
     - compile FMloaded.h and FMloader.cpp into your project
     - place 1 or more unmodified OpenVSP history.csv files (can be renamed) in /config (or other path specificed in entry.lua) within your mod folder
+    - AND/OR place 1 or more OpenVSP .polar files in /config.  When using .polar, which are random-number-of-spaces-separated, convert to proper comma-separated first.
+    
     - In your FM code add:
 
     static FMDataLoader FMData()
@@ -29,7 +31,45 @@ OpenVSP result file parser
     	double Cd_actual = FMdata.getPolar("CL", 0.0, mach,  alpha_DEG, beta_DEG);
 		double Cl_actual = FMdata.getPolar("CDtot", 0.0, mach, alpha_DEG, beta_DEG);
      ...}
+     
+    
+     
+     OR, if you want to have parameters for a given part of the airframe (AeroElement), you can do
+     
+     std::vector(FMDataLoader::AeroElement) aero;
+     
+     void ed_fm_configure(const char* cfg_path)
+     {
+     	...
+		FMdata = FMDataLoader(cfg_path); // load and store FM data
+		aero.push_back(AeroElement(FMdata, "Stabilizer", Vec3{ -12.5, 0.0, 2.6 }, Vec3{ 0.0, 0.0, 1.0 }, 3.7925, 0.9, -15.0, 20.0));  // configure the right stab, as an example
+	...
+      }
+  
+  and then 
+  
+ 	void ed_fm_simulate(double dt)
+	{
+		for (AeroElement& elem : aero)
+		{
 
+		if (elem.name == "Stabilizer")
+		{
+			elem.deflect(elevator_DEG);
+		}
+
+		elem.aeroUpdate(Lancaster::mach, alpha_DEG, beta_DEG);   
+
+		eDrag = elem.getDrag(Lancaster::ambientDensity_KgPerM3, Lancaster::totalVelocity_msec);
+		eLift = elem.getLift(Lancaster::ambientDensity_KgPerM3, Lancaster::totalVelocity_msec);
+		eMom = elem.getMoment(Lancaster::dynamicPressure_Nm2);
+		eFcenter = elem.getForceCenter();
+
+		add_force(eDrag, eFcenter);    // places the force at the appropriate airframe location. You'll need to figure something out to combine the force totals for DCS.
+		add_force(eLift, eFcenter);    
+		add_moment(eMom);
+
+	}
      Enjoy your parameters!
     - if you want to be fancy you can grab the FMElementData objects and use their accessors within your aero element style code
 
